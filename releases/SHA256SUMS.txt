@@ -1,0 +1,9 @@
+6bd5694f6012c7f1921ca8fd8876d75efdaf1232a570db7d9802ae62483dc98a  fitness-1.0.0.apk
+
+Signing certificate SHA-256:
+7d837f62b0786436ce99b1bcbe21c03b210ac10134fa748d2f25a0a632a4cb31
+
+Application ID: com.xieqinglin.fitness
+Version name: 1.0.0
+Version code: 1
+Minimum Android API: 26
