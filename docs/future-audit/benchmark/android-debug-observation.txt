@@ -1,61 +1,61 @@
---------- beginning of main
-11-12 05:24:45.513 11833 11833 I n.fitness.debu: Late-enabling -Xcheck:jni
-11-12 05:24:45.527 11833 11833 W n.fitness.debu: Unexpected CPU variant for X86 using defaults: x86_64
-11-12 05:24:46.186 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/os/Trace;->TRACE_TAG_APP:J (light greylist, reflection)
-11-12 05:24:46.186 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->isTagEnabled(J)Z (light greylist, reflection)
-11-12 05:24:46.336 11833 11833 D OpenGLRenderer: HWUI GL Pipeline
-11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->left:I (light greylist, linking)
-11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->top:I (light greylist, linking)
-11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->right:I (light greylist, linking)
-11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->bottom:I (light greylist, linking)
-11-12 05:24:46.859 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/WindowInsets;->CONSUMED:Landroid/view/WindowInsets; (light greylist, reflection)
-11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/View;->getViewRootImpl()Landroid/view/ViewRootImpl; (light greylist, reflection)
-11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/View$AttachInfo;->mVisibleInsets:Landroid/graphics/Rect; (light greylist, reflection)
-11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/ViewRootImpl;->mAttachInfo:Landroid/view/View$AttachInfo; (light greylist, reflection)
-11-12 05:24:46.974 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/text/SpannableStringInternal;->length()I (light greylist, linking)
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->create(Ljava/lang/String;Landroid/view/View;)Landroid/view/RenderNode; (light greylist, linking)
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getScaleX()F (dark greylist, linking)
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToBounds(Z)Z (light greylist, linking)
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToOutline(Z)Z (dark greylist, linking)
-11-12 05:24:46.994 11833 11833 I chatty  : uid=10067(com.xieqinglin.fitness.debug) identical 1 line
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToOutline(Z)Z (dark greylist, linking)
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerType(I)Z (dark greylist, linking)
-11-12 05:24:46.994 11833 11833 I chatty  : uid=10067(com.xieqinglin.fitness.debug) identical 1 line
-11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerType(I)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getMatrix(Landroid/graphics/Matrix;)V (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/DisplayListCanvas;->drawRenderNode(Landroid/view/RenderNode;)V (light greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->isValid()Z (light greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->start(II)Landroid/view/DisplayListCanvas; (light greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->end(Landroid/view/DisplayListCanvas;)V (light greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setAlpha(F)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setCameraDistance(F)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerPaint(Landroid/graphics/Paint;)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setOutline(Landroid/graphics/Outline;)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLeftTopRightBottom(IIII)Z (light greylist, linking)
-11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotationX(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotationY(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotation(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setScaleX(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setScaleY(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setElevation(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setTranslationX(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setTranslationY(F)Z (dark greylist, linking)
-11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getScaleX()F (dark greylist, linking)
-11-12 05:24:47.097 11833 11850 D         : HostConnection::get() New Host Connection established 0x751ffca4bd40, tid 11850
-11-12 05:24:47.100 11833 11850 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasWideColorDisplay retrieved: 0
-11-12 05:24:47.100 11833 11850 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasHDRDisplay retrieved: 0
-11-12 05:24:47.100 11833 11850 I OpenGLRenderer: Initialized EGL, version 1.4
-11-12 05:24:47.100 11833 11850 D OpenGLRenderer: Swap behavior 1
-11-12 05:24:47.103 11833 11850 D EGL_emulation: eglCreateContext: 0x7520044a6ec0: maj 2 min 0 rcv 2
-11-12 05:24:47.107 11833 11850 D EGL_emulation: eglMakeCurrent: 0x7520044a6ec0: ver 2 0 (tinfo 0x75200445cda0)
-11-12 05:24:47.176 11833 11833 I Choreographer: Skipped 43 frames!  The application may be doing too much work on its main thread.
-11-12 05:24:47.210 11833 11850 D EGL_emulation: eglMakeCurrent: 0x7520044a6ec0: ver 2 0 (tinfo 0x75200445cda0)
-11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->asyncTraceBegin(JLjava/lang/String;I)V (light greylist, reflection)
-11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (light greylist, reflection)
-11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->traceCounter(JLjava/lang/String;I)V (light greylist, reflection)
-11-12 05:24:47.844 11833 11861 W CursorWindow: Window is full: requested allocation 514 bytes, free space 198 bytes, window size 2097152 bytes
-11-12 05:24:57.758 11833 11833 I Choreographer: Skipped 469 frames!  The application may be doing too much work on its main thread.
+--------- beginning of main
+11-12 05:24:45.513 11833 11833 I n.fitness.debu: Late-enabling -Xcheck:jni
+11-12 05:24:45.527 11833 11833 W n.fitness.debu: Unexpected CPU variant for X86 using defaults: x86_64
+11-12 05:24:46.186 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/os/Trace;->TRACE_TAG_APP:J (light greylist, reflection)
+11-12 05:24:46.186 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->isTagEnabled(J)Z (light greylist, reflection)
+11-12 05:24:46.336 11833 11833 D OpenGLRenderer: HWUI GL Pipeline
+11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->left:I (light greylist, linking)
+11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->top:I (light greylist, linking)
+11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->right:I (light greylist, linking)
+11-12 05:24:46.811 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/graphics/Insets;->bottom:I (light greylist, linking)
+11-12 05:24:46.859 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/WindowInsets;->CONSUMED:Landroid/view/WindowInsets; (light greylist, reflection)
+11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/View;->getViewRootImpl()Landroid/view/ViewRootImpl; (light greylist, reflection)
+11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/View$AttachInfo;->mVisibleInsets:Landroid/graphics/Rect; (light greylist, reflection)
+11-12 05:24:46.861 11833 11833 W n.fitness.debu: Accessing hidden field Landroid/view/ViewRootImpl;->mAttachInfo:Landroid/view/View$AttachInfo; (light greylist, reflection)
+11-12 05:24:46.974 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/text/SpannableStringInternal;->length()I (light greylist, linking)
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->create(Ljava/lang/String;Landroid/view/View;)Landroid/view/RenderNode; (light greylist, linking)
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getScaleX()F (dark greylist, linking)
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToBounds(Z)Z (light greylist, linking)
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToOutline(Z)Z (dark greylist, linking)
+11-12 05:24:46.994 11833 11833 I chatty  : uid=10067(com.xieqinglin.fitness.debug) identical 1 line
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setClipToOutline(Z)Z (dark greylist, linking)
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerType(I)Z (dark greylist, linking)
+11-12 05:24:46.994 11833 11833 I chatty  : uid=10067(com.xieqinglin.fitness.debug) identical 1 line
+11-12 05:24:46.994 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerType(I)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getMatrix(Landroid/graphics/Matrix;)V (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/DisplayListCanvas;->drawRenderNode(Landroid/view/RenderNode;)V (light greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->isValid()Z (light greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->start(II)Landroid/view/DisplayListCanvas; (light greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->end(Landroid/view/DisplayListCanvas;)V (light greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setAlpha(F)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setCameraDistance(F)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLayerPaint(Landroid/graphics/Paint;)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setOutline(Landroid/graphics/Outline;)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setLeftTopRightBottom(IIII)Z (light greylist, linking)
+11-12 05:24:46.995 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setPivotX(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotationX(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotationY(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setRotation(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setScaleX(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setScaleY(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setElevation(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setTranslationX(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->setTranslationY(F)Z (dark greylist, linking)
+11-12 05:24:46.996 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/view/RenderNode;->getScaleX()F (dark greylist, linking)
+11-12 05:24:47.097 11833 11850 D         : HostConnection::get() New Host Connection established 0x751ffca4bd40, tid 11850
+11-12 05:24:47.100 11833 11850 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasWideColorDisplay retrieved: 0
+11-12 05:24:47.100 11833 11850 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasHDRDisplay retrieved: 0
+11-12 05:24:47.100 11833 11850 I OpenGLRenderer: Initialized EGL, version 1.4
+11-12 05:24:47.100 11833 11850 D OpenGLRenderer: Swap behavior 1
+11-12 05:24:47.103 11833 11850 D EGL_emulation: eglCreateContext: 0x7520044a6ec0: maj 2 min 0 rcv 2
+11-12 05:24:47.107 11833 11850 D EGL_emulation: eglMakeCurrent: 0x7520044a6ec0: ver 2 0 (tinfo 0x75200445cda0)
+11-12 05:24:47.176 11833 11833 I Choreographer: Skipped 43 frames!  The application may be doing too much work on its main thread.
+11-12 05:24:47.210 11833 11850 D EGL_emulation: eglMakeCurrent: 0x7520044a6ec0: ver 2 0 (tinfo 0x75200445cda0)
+11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->asyncTraceBegin(JLjava/lang/String;I)V (light greylist, reflection)
+11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (light greylist, reflection)
+11-12 05:24:47.481 11833 11833 W n.fitness.debu: Accessing hidden method Landroid/os/Trace;->traceCounter(JLjava/lang/String;I)V (light greylist, reflection)
+11-12 05:24:47.844 11833 11861 W CursorWindow: Window is full: requested allocation 514 bytes, free space 198 bytes, window size 2097152 bytes
+11-12 05:24:57.758 11833 11833 I Choreographer: Skipped 469 frames!  The application may be doing too much work on its main thread.
 11-12 05:25:03.659 11833 11902 D ProfileInstaller: Installing profile for com.xieqinglin.fitness.debug
