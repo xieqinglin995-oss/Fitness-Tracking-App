@@ -19,7 +19,8 @@ object TrainingCompletion {
         require(items.isNotEmpty()) { "所选项目已经完成或跳过，无需重复操作" }
         val before = items.mapNotNull { data.execution(it.id) }
         val after = items.map { item ->
-            data.execution(item.id)?.copy(status = ExecutionStatus.DONE, updatedAt = now())
+            data.execution(item.id)?.let { it.copy(status = ExecutionStatus.DONE, updatedAt = now(),
+                completedSets = if (it.kindSnapshot == ExerciseKind.STRENGTH) it.actual.sets.indices.toList() else emptyList()) }
                 ?: Execution(date = date, exerciseId = item.id, nameSnapshot = item.name,
                     kindSnapshot = item.kind, targetSnapshot = item.target, actual = item.target, status = ExecutionStatus.DONE)
         }

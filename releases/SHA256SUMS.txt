@@ -2,10 +2,12 @@
 15cb0beceec74eabd3c5f9e10b393e8d2a4520093a5bc74daa61ecbaa6601f59  fitness-1.1.0.apk
 3aa5e9e1a3c9d6e30465d281934f58e02f8f2797044d80f49d9d7addf983ae29  fitness-1.1.1.apk
 
+9e00bf3bfd458f0f3a9d3cf510115db68577fccfbe2bcaf9e20886d1040d7f26  fitness-1.2.0.apk
+
 Signing certificate SHA-256:
 7d837f62b0786436ce99b1bcbe21c03b210ac10134fa748d2f25a0a632a4cb31
 
 Application ID: com.xieqinglin.fitness
-Latest version name: 1.1.1
-Latest version code: 5
+Latest version name: 1.2.0
+Latest version code: 6
 Minimum Android API: 26

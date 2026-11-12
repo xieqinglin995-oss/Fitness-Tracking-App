@@ -76,4 +76,29 @@ class WeightFlowTest {
         compose.onNodeWithText("撤销").performClick()
         compose.waitUntil(10_000) { runBlocking { repo.snapshot().executions.toSet() == data.executions.toSet() } }
     }
+
+    @Test fun focusedTrainingPersistsConfirmedSetsAcrossRecreation() {
+        val date = java.time.LocalDate.now().toString()
+        val item = Exercise(name = "深蹲", kind = ExerciseKind.STRENGTH, target = Values(sets = listOf(SetValue(10, 0), SetValue(10, 0))))
+        val repo = (compose.activity.application as FitnessApplication).repository
+        runBlocking { repo.mutate { FitnessData(plans = listOf(DailyPlan(date = date, exercises = listOf(item)))) } }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("开始训练").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("开始训练").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("完成第1组").performClick()
+        compose.waitUntil(10_000) { runBlocking { repo.snapshot().execution(item.id)?.completedSets == listOf(0) } }
+        compose.activityRule.scenario.recreate()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("专注训练").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("完成第1组").assertIsOn()
+        compose.onNodeWithContentDescription("完成第2组").performClick()
+        compose.waitUntil(10_000) { runBlocking { repo.snapshot().execution(item.id)?.status == ExecutionStatus.DONE } }
+    }
+
+    @Test fun trendsRangeIsRetainedAfterVisitingSettings() {
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("记录今日体重").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("趋势").performClick()
+        compose.onNodeWithText("近 90 天").performClick()
+        compose.onNodeWithContentDescription("设置").performClick()
+        compose.onNodeWithContentDescription("返回上一页").performClick()
+        compose.onNodeWithText("近 90 天").assertIsSelected()
+    }
 }

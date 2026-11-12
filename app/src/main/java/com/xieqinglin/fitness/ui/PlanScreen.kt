@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.xieqinglin.fitness.domain.*
 import com.xieqinglin.fitness.presentation.FitnessViewModel
 import java.time.LocalDate
+import com.xieqinglin.fitness.backup.fitnessJson
+import kotlinx.serialization.encodeToString
 
 @Composable fun WorkoutCard(item: Exercise, date: String, data: FitnessData, vm: FitnessViewModel, busy: Boolean,
     onEdit: (() -> Unit)? = null, onDelete: (() -> Unit)? = null, onUp: (() -> Unit)? = null, onDown: (() -> Unit)? = null, onExecute: (() -> Unit)? = null) {
@@ -49,7 +51,10 @@ import java.time.LocalDate
         Text("计划  ${item.target.summary(item.kind, unit)}", style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (item.note.isNotBlank()) Text(item.note, style = MaterialTheme.typography.bodySmall)
         if (record != null) {
-            Text("实际  ${record.actual.summary(record.kindSnapshot, unit)}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+            val actualLabel = if (record.status == ExecutionStatus.DRAFT && record.kindSnapshot == ExerciseKind.STRENGTH)
+                "已确认 ${record.completedSets.size} / ${record.actual.sets.size} 组 · 草稿 ${record.actual.summary(record.kindSnapshot, unit)}"
+                else "实际  ${record.actual.summary(record.kindSnapshot, unit)}"
+            Text(actualLabel, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
             if (record.nameSnapshot != item.name) Text("记录时项目：${record.nameSnapshot}", style = MaterialTheme.typography.bodySmall)
             if (record.targetSnapshot != item.target) Text("记录时目标：${record.targetSnapshot.description(record.kindSnapshot, unit)}", style = MaterialTheme.typography.bodySmall)
             if (record.status == ExecutionStatus.SKIPPED) Text("跳过原因：${record.skipReason.ifBlank { "未填写" }}")
@@ -69,7 +74,7 @@ import java.time.LocalDate
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun PlanScreen(data: FitnessData, date: String, onDate: (String) -> Unit, today: LocalDate, vm: FitnessViewModel, busy: Boolean) {
+@Composable fun PlanScreen(data: FitnessData, date: String, onDate: (String) -> Unit, today: LocalDate, vm: FitnessViewModel, busy: Boolean, onStartSession: (String) -> Unit = {}) {
     val selected = LocalDate.parse(date)
     val monday = weekStart(selected)
     val plan = data.plan(date)
@@ -84,6 +89,9 @@ import java.time.LocalDate
     var copyWeek by rememberSaveable { mutableStateOf(false) }
     var batchOpen by rememberSaveable(date) { mutableStateOf(false) }
     var planMenu by rememberSaveable(date) { mutableStateOf(false) }
+    var monthOpen by rememberSaveable { mutableStateOf(false) }
+    var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var seedText by rememberSaveable { mutableStateOf<String?>(null) }
     fun reorder(id: String, delta: Int) = vm.change { current ->
         current.copy(plans = current.plans.map { p -> if (p.date != date) p else {
             val items = p.exercises.toMutableList(); val index = items.indexOfFirst { it.id == id }; val target = index + delta
@@ -103,6 +111,7 @@ import java.time.LocalDate
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = { onDate(today.toString()) }) { Text("回到今天") }
+                TextButton(onClick = { monthOpen = true }) { Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(16.dp)); Text("月历") }
                 Text("${data.plans.count { it.date >= monday.toString() && it.date <= monday.plusDays(6).toString() && it.exercises.isNotEmpty() }} 天已安排训练", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp))
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -144,12 +153,15 @@ import java.time.LocalDate
             if (plan?.rest == true) Text("已安排休息。添加训练或应用模板会将这天改为训练日。")
             if (plan == null) Text("从一个动作开始，也可以复用自己的训练模板。")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { addOpen = true }, enabled = !busy) { Text("＋ 添加项目") }
+                Button(onClick = { pickerOpen = true }, enabled = !busy) { Text("＋ 添加项目") }
                 OutlinedButton(onClick = { templatesOpen = true }, enabled = !busy) { Text("训练模板") }
             }
             if (plan?.exercises?.isNotEmpty() == true && date <= today.toString()) FilledTonalButton(onClick = { batchOpen = true },
                 enabled = !busy && TrainingCompletion.eligible(data, date).isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.DoneAll, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("批量完成")
+            }
+            if (plan?.exercises?.isNotEmpty() == true && date <= today.toString()) Button(onClick = { onStartSession(date) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Outlined.PlayArrow, null); Text("进入训练模式")
             }
         } }
         plan?.exercises.orEmpty().forEachIndexed { index, exercise -> item(key = exercise.id) {
@@ -160,8 +172,10 @@ import java.time.LocalDate
         } }
     }
     val editing = plan?.exercises?.find { it.id == editId }
+    if (monthOpen) MonthCalendar(data, selected, { monthOpen = false }, onDate)
+    if (pickerOpen) ExercisePicker(data, busy, { pickerOpen = false }) { seed -> seedText = seed?.let { fitnessJson.encodeToString(it) }; pickerOpen = false; addOpen = true }
     if (batchOpen) BatchCompletionDialog(data, date, vm, busy, onDismiss = { batchOpen = false })
-    if (addOpen || editing != null) ExerciseForm(editing, data.settings.loadUnit, busy, onDismiss = { addOpen = false; editId = null }) { item ->
+    if (addOpen || editing != null) ExerciseForm(editing, data.settings.loadUnit, busy, onDismiss = { addOpen = false; editId = null }, seed = if (editing == null) seedText?.let { fitnessJson.decodeFromString<Exercise>(it) } else null) { item ->
         vm.action(onSuccess = { addOpen = false; editId = null }) { vm.repository.saveExercise(date, item) }
     }
     deleteId?.let { id ->

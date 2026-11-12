@@ -11,6 +11,11 @@ import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.activity.compose.LocalActivity
+import com.xieqinglin.fitness.MainActivity
+import com.xieqinglin.fitness.backup.fitnessJson
+import kotlinx.serialization.encodeToString
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +38,10 @@ import java.time.LocalDate
     val preview by vm.preview.collectAsStateWithLifecycle()
     val data = screen.data
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var previousTab by rememberSaveable { mutableIntStateOf(0) }
+    var sessionDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var csvTraining by rememberSaveable { mutableStateOf(false) }
+    val pages = rememberSaveableStateHolder()
     var today by remember { mutableStateOf(LocalDate.now()) }
     var selectedDate by rememberSaveable { mutableStateOf(today.toString()) }
     var weightOpen by rememberSaveable { mutableStateOf(false) }
@@ -47,15 +56,29 @@ import java.time.LocalDate
         if (result == SnackbarResult.ActionPerformed) notice.undo?.let(vm::undoCompletion)
     } }
     LaunchedEffect(Unit) { while (true) { today = LocalDate.now(); delay(15_000) } }
-    BackHandler(tab != 0 && !busy) { tab = 0 }
+    BackHandler(tab != 0 && !busy) { tab = if (tab == 3) previousTab else 0 }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { it?.let(vm::export) }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::inspect) }
     val safety = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { it?.let(vm::restoreWithSafetyCopy) }
+    val csv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { vm.exportCsv(it, csvTraining) } }
     fun openWeight(entry: WeightEntry?, date: String = today.toString()) { weightId = entry?.id; weightDate = date; weightOpen = true }
+    val activity = LocalActivity.current as MainActivity
+    val requested by activity.requestedAction.collectAsStateWithLifecycle()
+    LaunchedEffect(requested, screen.loaded, sessionDate) {
+        if (screen.loaded && requested != null && sessionDate == null) {
+            if (requested == "weight") { tab = 0; openWeight(data.weights.find { it.date == today.toString() }) }
+            else { tab = 0; if (data.plan(today.toString())?.exercises?.isNotEmpty() == true) sessionDate = today.toString() }
+            activity.requestedAction.value = null
+        }
+    }
+    if (sessionDate != null && screen.loaded) {
+        TrainingSessionScreen(data, sessionDate!!, vm, busy, snackbar) { sessionDate = null }
+        return
+    }
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(listOf(stringResource(R.string.app_name), "训练计划", "体重趋势", "设置与数据")[tab], style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
-                actions = { if (tab != 3) IconButton(onClick = { tab = 3 }) { Icon(Icons.Outlined.Settings, "设置") } else IconButton(onClick = { tab = 0 }) { Icon(Icons.Outlined.Close, "返回今天") } })
+                actions = { if (tab != 3) IconButton(onClick = { previousTab = tab; tab = 3 }) { Icon(Icons.Outlined.Settings, "设置") } else IconButton(onClick = { tab = previousTab }) { Icon(Icons.Outlined.Close, "返回上一页") } })
         },
         bottomBar = { if (tab != 3) NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
             listOf("今天" to Icons.Outlined.Home, "计划" to Icons.Outlined.CalendarMonth, "趋势" to Icons.AutoMirrored.Outlined.ShowChart).forEachIndexed { index, (label, icon) ->
@@ -65,15 +88,16 @@ import java.time.LocalDate
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            when {
+            pages.SaveableStateProvider(tab) { when {
                 screen.error != null -> Column(Modifier.padding(24.dp)) { ErrorText(screen.error); Button(onClick = vm::reload) { Text("重试读取") } }
                 !screen.loaded -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 tab == 0 -> TodayScreen(data, today, { openWeight(data.weights.find { it.date == today.toString() }) }, { tab = 2 }, { selectedDate = today.toString(); tab = 1 }, vm, busy,
-                    onExecute = { date, id -> executionDate = date; executionId = id })
-                tab == 1 -> PlanScreen(data, selectedDate, { selectedDate = it }, today, vm, busy)
+                    onExecute = { date, id -> executionDate = date; executionId = id }, onStartSession = { sessionDate = it })
+                tab == 1 -> PlanScreen(data, selectedDate, { selectedDate = it }, today, vm, busy, onStartSession = { sessionDate = it })
                 tab == 2 -> TrendsScreen(data, today, { openWeight(it, it?.date ?: today.toString()) }, { selectedDate = it; tab = 1 })
-                tab == 3 -> SettingsScreen(data, vm, busy, { export.launch("fitness-$today.json") }, { import.launch(arrayOf("application/json", "text/*", "application/octet-stream")) })
-            }
+                tab == 3 -> SettingsScreen(data, vm, busy, { export.launch("fitness-$today.json") }, { import.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
+                    onCsv = { training -> csvTraining = training; csv.launch(if (training) "training-$today.csv" else "weight-$today.csv") })
+            } }
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.TopCenter))
         }
     }
@@ -87,7 +111,7 @@ import java.time.LocalDate
     }
 }
 
-@Composable private fun TodayScreen(data: FitnessData, today: LocalDate, onWeight: () -> Unit, onTrend: () -> Unit, onPlan: () -> Unit, vm: FitnessViewModel, busy: Boolean, onExecute: (String, String) -> Unit) {
+@Composable private fun TodayScreen(data: FitnessData, today: LocalDate, onWeight: () -> Unit, onTrend: () -> Unit, onPlan: () -> Unit, vm: FitnessViewModel, busy: Boolean, onExecute: (String, String) -> Unit, onStartSession: (String) -> Unit) {
     val date = today.toString()
     val weight = data.weights.find { it.date == date }
     val latest = data.weights.maxByOrNull { it.date }
@@ -98,8 +122,17 @@ import java.time.LocalDate
     val prior = data.weights.filter { it.date < date }.maxByOrNull { it.date }
     var temporaryOpen by rememberSaveable { mutableStateOf(false) }
     var batchOpen by rememberSaveable { mutableStateOf(false) }
+    var pickerOpen by rememberSaveable { mutableStateOf(false) }
+    var seedText by rememberSaveable { mutableStateOf<String?>(null) }
+    var repeatOpen by rememberSaveable { mutableStateOf(false) }
+    val recentPlan = data.plans.filter { it.date < date && it.exercises.isNotEmpty() }.maxByOrNull { it.date }
+    val overview = remember(data, today) { data.weekOverview(today) }
+    val timer by vm.timer.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Text(displayDate(today), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(displayDate(today), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = onTrend) { Text("本周训练 ${overview.trainedDays} 天") }
+        } }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF18243E), contentColor = Color.White), modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -138,22 +171,23 @@ import java.time.LocalDate
             if (plan?.exercises?.isNotEmpty() == true) {
                 LinearProgressIndicator(progress = { done.toFloat() / plan.exercises.size }, modifier = Modifier.fillMaxWidth().height(6.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { batchOpen = true }, enabled = !busy && pending > 0, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Outlined.DoneAll, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (pending > 0) "批量完成" else "训练已结束")
-                    }
-                    OutlinedButton(onClick = { temporaryOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, "临时新增训练") }
+                    Button(onClick = { onStartSession(date) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text(if (pending == 0) "回看训练" else if (done > 0 || data.dayStatus(date) == DayStatus.ACTIVE) "继续训练" else "开始训练") }
+                    OutlinedButton(onClick = { batchOpen = true }, enabled = !busy && pending > 0) { Text("批量完成") }
+                    IconButton(onClick = { pickerOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, "临时新增训练") }
                 }
             } else if (plan?.rest != true) {
                 Text("添加今天的项目，或从计划页应用模板。", style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { temporaryOpen = true }, enabled = !busy) { Text("添加训练") }
+                    Button(onClick = { pickerOpen = true }, enabled = !busy) { Text("添加训练") }
                     TextButton(onClick = { vm.change { PlanOperations.rest(it, date, true) } }, enabled = !busy) { Text("设为休息日") }
                 }
+                if (recentPlan != null) TextButton(onClick = { repeatOpen = true }, enabled = !busy) { Text("复用最近训练 · ${recentPlan.date.substring(5)}") }
             } else {
                 Text("今天安排休息，恢复也是训练的一部分。", style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { temporaryOpen = true }, enabled = !busy) { Text("临时新增训练") }
+                TextButton(onClick = { pickerOpen = true }, enabled = !busy) { Text("临时新增训练") }
             }
         } }
+        if (timer.running || timer.pausedMillis > 0) item { RestTimerCard(vm) }
         plan?.exercises.orEmpty().forEach { exercise -> item(key = exercise.id) { WorkoutCard(exercise, date, data, vm, busy, onExecute = { onExecute(date, exercise.id) }) } }
         item { SectionCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -164,7 +198,11 @@ import java.time.LocalDate
         } }
     }
     if (batchOpen) BatchCompletionDialog(data, date, vm, busy, onDismiss = { batchOpen = false })
-    if (temporaryOpen) ExerciseForm(null, data.settings.loadUnit, busy, temporary = true, onDismiss = { temporaryOpen = false }) { exercise ->
+    if (repeatOpen && recentPlan != null) ConfirmDialog("复用最近一次训练？", "将 ${recentPlan.date} 的 ${recentPlan.exercises.size} 个项目安排到今天，只复制目标，不复制完成状态。", "使用这个计划", busy, { repeatOpen = false }) {
+        vm.change("训练已安排", { repeatOpen = false }) { PlanOperations.apply(it, date, recentPlan.exercises, recentPlan.name, ConflictChoice.APPEND) }
+    }
+    if (pickerOpen) ExercisePicker(data, busy, { pickerOpen = false }) { seed -> seedText = seed?.let { fitnessJson.encodeToString(it) }; pickerOpen = false; temporaryOpen = true }
+    if (temporaryOpen) ExerciseForm(null, data.settings.loadUnit, busy, temporary = true, onDismiss = { temporaryOpen = false }, seed = seedText?.let { fitnessJson.decodeFromString<Exercise>(it) }) { exercise ->
         vm.action(onSuccess = { temporaryOpen = false }) { vm.repository.saveExercise(date, exercise) }
     }
 }

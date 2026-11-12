@@ -9,6 +9,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.xieqinglin.fitness.platform.ThemeChoice
 
 val Forest = Color(0xFF3159D9)
 val Lime = Color(0xFFEAF0FF)
@@ -23,15 +24,16 @@ private val LightColors = lightColorScheme(
     outline = Color(0xFF8B96AA), outlineVariant = Color(0xFFE1E6F0),
 )
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFB4C5FF), primaryContainer = Color(0xFF23376B), onPrimaryContainer = Color(0xFFDCE5FF),
-    secondary = Color(0xFF8CDACB), secondaryContainer = Color(0xFF21443F), tertiary = Color(0xFFF3BA7B),
+    primary = Color(0xFFB4C5FF), onPrimary = Color(0xFF182952), primaryContainer = Color(0xFF23376B), onPrimaryContainer = Color(0xFFDCE5FF),
+    secondary = Color(0xFF8CDACB), onSecondary = Color(0xFF123A33), secondaryContainer = Color(0xFF21443F), tertiary = Color(0xFFF3BA7B),
     background = Color(0xFF101623), surface = Color(0xFF101623), onSurface = Color(0xFFE4E9F4),
     surfaceContainer = Color(0xFF1B2334), surfaceVariant = Color(0xFF252F43),
     onSurfaceVariant = Color(0xFFAAB6CB), outlineVariant = Color(0xFF344056),
 )
 
-@Composable fun FitnessTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+@Composable fun FitnessTheme(theme: ThemeChoice = ThemeChoice.SYSTEM, content: @Composable () -> Unit) {
+    val dark = when (theme) { ThemeChoice.SYSTEM -> isSystemInDarkTheme(); ThemeChoice.LIGHT -> false; ThemeChoice.DARK -> true }
+    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors,
         typography = Typography(
             headlineLarge = TextStyle(fontWeight = FontWeight.Bold, fontSize = 34.sp, lineHeight = 42.sp),
             headlineMedium = TextStyle(fontWeight = FontWeight.Bold, fontSize = 24.sp, lineHeight = 32.sp),

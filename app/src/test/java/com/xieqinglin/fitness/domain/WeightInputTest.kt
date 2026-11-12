@@ -4,6 +4,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WeightInputTest {
+    @Test fun quickAdjustmentUsesSelectedUnitAndKeepsExactGrams() {
+        val input = WeightInput("160.01", WeightUnit.JIN).adjust(1)
+        assertEquals(80055L, input.grams())
+        assertEquals(80005L, input.adjust(-1).grams())
+        assertEquals(80105L, WeightInput("80.01", WeightUnit.KG, 80005).adjust(1).grams())
+    }
     @Test fun jinAndKgConversionPreservesFractionalGramsAcrossToggles() {
         var input = WeightInput("160.01", WeightUnit.JIN)
         repeat(100) { input = input.switchTo(WeightUnit.KG).switchTo(WeightUnit.JIN) }

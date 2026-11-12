@@ -34,6 +34,7 @@ fun now(): String = OffsetDateTime.now().toString()
     val nameSnapshot: String, val kindSnapshot: ExerciseKind, val targetSnapshot: Values,
     val actual: Values, val status: ExecutionStatus, val skipReason: String = "",
     val updatedAt: String = now(),
+    val completedSets: List<Int> = if (kindSnapshot == ExerciseKind.STRENGTH && status == ExecutionStatus.DONE) actual.sets.indices.toList() else emptyList(),
 )
 @Serializable data class WorkoutTemplate(
     val id: String = newId(), val name: String, val exercises: List<Exercise>,

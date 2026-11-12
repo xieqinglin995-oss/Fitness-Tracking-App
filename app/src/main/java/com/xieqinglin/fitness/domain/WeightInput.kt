@@ -6,6 +6,11 @@ import java.math.BigDecimal
 data class WeightInput(val text: String, val unit: WeightUnit, val exactGrams: Long? = null) {
     fun grams(): Long = exactGrams ?: Rules.weight(text, unit)
     fun edit(text: String) = copy(text = text, exactGrams = null)
+    fun adjust(tenths: Int): WeightInput {
+        val next = Math.addExact(grams(), tenths * if (unit == WeightUnit.KG) 100L else 50L)
+        require(next > 0) { "体重须大于 0" }
+        return copy(text = formatWeight(next, unit), exactGrams = next)
+    }
     fun switchTo(next: WeightUnit): WeightInput {
         if (next == unit) return this
         if (text.isBlank()) return WeightInput("", next)

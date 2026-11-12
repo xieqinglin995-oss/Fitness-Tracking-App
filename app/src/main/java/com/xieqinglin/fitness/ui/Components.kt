@@ -50,8 +50,9 @@ fun displayDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPatte
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("取消") } })
 }
 
-@Composable fun FormDialog(title: String, busy: Boolean, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+@Composable fun FormDialog(title: String, busy: Boolean, onDismiss: () -> Unit, dirty: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    var discard by rememberSaveable { mutableStateOf(false) }
+    Dialog(onDismissRequest = { if (!busy) { if (dirty) discard = true else onDismiss() } }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxWidth().padding(12.dp).heightIn(max = 740.dp), shape = MaterialTheme.shapes.extraLarge) {
             Column(Modifier.imePadding().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLarge)
@@ -59,6 +60,7 @@ fun displayDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPatte
             }
         }
     }
+    if (discard) ConfirmDialog("放弃未保存的修改？", "已经保存的记录不会受到影响。", "放弃修改", busy, { discard = false }, onDismiss)
 }
 
 @Composable fun ErrorText(error: String?) {

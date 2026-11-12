@@ -3,6 +3,7 @@ package com.xieqinglin.fitness.ui
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -58,6 +59,14 @@ import kotlin.math.roundToLong
                 val left = axisWidth.toPx(); val width = size.width - left - 16.dp.toPx()
                 selectedDate = points.minByOrNull { abs(left + (it.date.toEpochDay() - start.toEpochDay()).toFloat() / days * width - position.x) }?.date?.toString()
             }
+        }.pointerInput(points, start, end, axisWidth) {
+            detectDragGestures(onDrag = { change, _ ->
+                if (onOpen == null) {
+                    change.consume()
+                    val left = axisWidth.toPx(); val width = size.width - left - 16.dp.toPx()
+                    selectedDate = points.minByOrNull { abs(left + (it.date.toEpochDay() - start.toEpochDay()).toFloat() / days * width - change.position.x) }?.date?.toString()
+                }
+            })
         }) {
         val left = axisWidth.toPx(); val right = size.width - 16.dp.toPx()
         val top = 12.dp.toPx(); val bottom = size.height - 26.dp.toPx()
@@ -97,6 +106,6 @@ import kotlin.math.roundToLong
         Text("● 实际体重" + (if (showAverage) "   ▪ 7 日均值" else "") + (if (goal != null) "\n··· 目标 ${formatWeight(goal, unit)} ${unit.label}" else ""), style = MaterialTheme.typography.bodySmall)
         if (selected != null) Text("${selected.date} · ${formatWeight(selected.grams, unit)} ${unit.label}" +
             (selected.averageGrams?.let { "\n7 日均值 ${formatWeight(it.roundToLong(), unit)} ${unit.label} · ${selected.samples} 天样本" } ?: "\n7 日窗口内不足 3 天记录，暂无均值"), style = MaterialTheme.typography.bodyMedium)
-        if (selected == null) Text("轻点数据点，查看当天体重", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (selected == null) Text("轻点或左右滑动，查看当天体重", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

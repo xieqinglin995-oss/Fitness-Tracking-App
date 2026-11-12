@@ -10,9 +10,9 @@ class BackupCodecTest {
     private val data = FitnessData(weights = listOf(WeightEntry(date = "2026-11-01", grams = 80250)), settings = Settings(WeightUnit.JIN, 75000))
     private fun rejected(data: FitnessData) = assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data), today) }.isFailure)
     @Test fun allFieldsRoundTrip() { assertEquals(data, BackupCodec.decode(BackupCodec.encode(data), today).data) }
-    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":2", "\"schemaVersion\":3"), today) }.isFailure) }
+    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":3", "\"schemaVersion\":4"), today) }.isFailure) }
     @Test fun legacyV1BackupMigratesCombinedUnitWithoutLosingRecords() {
-        val legacy = BackupCodec.encode(data).replace("\"schemaVersion\":2", "\"schemaVersion\":1").replace(",\"loadUnit\":\"JIN\"", "")
+        val legacy = BackupCodec.encode(data).replace("\"schemaVersion\":3", "\"schemaVersion\":1").replace(",\"loadUnit\":\"JIN\"", "")
         assertEquals(data, BackupCodec.decode(legacy, today).data)
     }
     @Test fun missingV2LoadUnitCannotSilentlyChangePreference() {

@@ -48,13 +48,19 @@ class FitnessRepository(private val database: FitnessDatabase) {
         data.copy(plans = data.plans.filterNot { it.date == date } + plan.copy(rest = false, exercises = items))
     }
 
-    suspend fun saveExecution(date: String, item: Exercise, actual: Values, status: ExecutionStatus, reason: String) = mutate { data ->
+    suspend fun saveExecution(date: String, item: Exercise, actual: Values, status: ExecutionStatus, reason: String, completedSets: List<Int>? = null) = mutate { data ->
         Rules.pastDate(date)
         val savedItem = data.plan(date)?.exercises?.find { it.id == item.id }
         require(savedItem != null) { "项目已变更，请重新打开" }
         val old = data.execution(item.id)
         val record = Execution(old?.id ?: newId(), date, item.id, old?.nameSnapshot ?: item.name,
-            old?.kindSnapshot ?: item.kind, old?.targetSnapshot ?: item.target, actual, status, reason)
+            old?.kindSnapshot ?: item.kind, old?.targetSnapshot ?: item.target, actual, status, reason,
+            completedSets = when {
+                item.kind != ExerciseKind.STRENGTH || status == ExecutionStatus.SKIPPED -> emptyList()
+                status == ExecutionStatus.DONE -> actual.sets.indices.toList()
+                else -> (completedSets ?: if (old?.status == ExecutionStatus.DRAFT && old.actual == actual) old.completedSets else emptyList())
+                    .filter { it in actual.sets.indices }.distinct().sorted()
+            })
         data.copy(executions = data.executions.filterNot { it.exerciseId == item.id } + record)
     }
 

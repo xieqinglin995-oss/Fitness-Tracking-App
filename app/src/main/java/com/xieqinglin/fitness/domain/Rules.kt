@@ -84,6 +84,10 @@ object Rules {
             require(parent.second.kind == it.kindSnapshot) { "实际记录与关联项目的记录方式不一致" }
             values(it.kindSnapshot, it.targetSnapshot)
             values(it.kindSnapshot, it.actual, actual = true)
+            require(it.completedSets.distinct().size == it.completedSets.size && it.completedSets.all { index -> index in it.actual.sets.indices }) { "已完成组数不合法" }
+            require(it.kindSnapshot == ExerciseKind.STRENGTH || it.completedSets.isEmpty()) { "该项目不包含组次" }
+            require(it.status != ExecutionStatus.DONE || it.kindSnapshot != ExerciseKind.STRENGTH || it.completedSets.toSet() == it.actual.sets.indices.toSet()) { "已完成项目须包含全部训练组" }
+            require(it.status != ExecutionStatus.SKIPPED || it.completedSets.isEmpty()) { "跳过项目不能包含已完成组" }
             timestamp(it.updatedAt)
         }
         unique(data.templates.map { it.id }, "模板")

@@ -19,8 +19,8 @@ android {
         applicationId = "com.xieqinglin.fitness"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.gradleProperty("appVersionCode").orElse("5").get().toInt()
-        versionName = "1.1.1"
+        versionCode = providers.gradleProperty("appVersionCode").orElse("6").get().toInt()
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

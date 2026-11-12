@@ -125,4 +125,17 @@ class DatabaseTest {
         repo.undoCompletion(token)
         assertEquals(initial, repo.snapshot())
     }
+    @Test fun manualSetEditsAndReopeningCompletedExerciseRequireNewConfirmation() = runBlocking {
+        val date = "2026-01-01"
+        val item = Exercise(name = "深蹲", kind = ExerciseKind.STRENGTH, target = Values(sets = listOf(SetValue(10), SetValue(12))))
+        repo.saveExercise(date, item)
+        repo.saveExecution(date, item, item.target, ExecutionStatus.DRAFT, "", listOf(0))
+        assertEquals(listOf(0), repo.snapshot().execution(item.id)!!.completedSets)
+        val changed = Values(sets = listOf(SetValue(12)))
+        repo.saveExecution(date, item, changed, ExecutionStatus.DRAFT, "")
+        assertTrue(repo.snapshot().execution(item.id)!!.completedSets.isEmpty())
+        repo.saveExecution(date, item, changed, ExecutionStatus.DONE, "")
+        repo.saveExecution(date, item, changed, ExecutionStatus.DRAFT, "")
+        assertTrue(repo.snapshot().execution(item.id)!!.completedSets.isEmpty())
+    }
 }

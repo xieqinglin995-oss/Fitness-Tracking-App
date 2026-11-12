@@ -27,6 +27,7 @@ import kotlin.math.roundToLong
     val unit = data.settings.unit
     val rangeLabel = if (range == 0) "全部历史" else "近 $range 天"
     val trainingDates = data.executions.filter { it.status != ExecutionStatus.SKIPPED && (from == null || it.date >= from.toString()) && it.date <= today.toString() }.map { it.date }.distinct().sorted()
+    val overview = remember(data, today) { data.weekOverview(today) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -59,6 +60,11 @@ import kotlin.math.roundToLong
         } }
         item { SectionCard {
             Text("更多数据", style = MaterialTheme.typography.titleMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Metric("本周训练", "${overview.trainedDays} 天", Modifier.weight(1f), "按完成动作的日期统计")
+                Metric("本周称重", "${overview.recordedDays} 天", Modifier.weight(1f), "截至今天")
+            }
+            HorizontalDivider()
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Metric("较上次变化", stats.sincePrevious?.let { "${formatDelta(it, unit)} ${unit.label}" } ?: "数据不足", Modifier.weight(1f), stats.previous?.let { "${it.date}\n至 ${stats.latest!!.date}" })
                 Metric("区间平均", stats.mean?.let { "${formatWeight(it.roundToLong(), unit)} ${unit.label}" } ?: "暂无记录", Modifier.weight(1f), "记录 ${stats.entries.size} 天")

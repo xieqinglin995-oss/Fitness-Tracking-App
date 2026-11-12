@@ -13,6 +13,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import com.xieqinglin.fitness.backup.fitnessJson
@@ -28,8 +32,10 @@ import java.time.LocalDate
     var date by rememberSaveable { mutableStateOf(original?.date ?: initialDate) }
     var number by rememberSaveable { mutableStateOf(original?.let { formatWeight(it.grams, unit) } ?: "") }
     var exactGrams by rememberSaveable { mutableStateOf(original?.grams) }
+    var selectionStart by rememberSaveable { mutableIntStateOf(0) }
+    var selectionEnd by rememberSaveable { mutableIntStateOf(number.length) }
     var note by rememberSaveable { mutableStateOf(original?.note ?: "") }
-    var details by rememberSaveable { mutableStateOf(initialDate != LocalDate.now().toString() || original?.note?.isNotBlank() == true) }
+    var details by rememberSaveable { mutableStateOf(initialDate != LocalDate.now().toString()) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var overwrite by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
@@ -45,16 +51,23 @@ import java.time.LocalDate
     }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    FormDialog(if (original == null) "记录体重" else "编辑体重", busy, onDismiss) {
+    val prior = data.weights.filter { it.date <= date && it.id != original?.id }.maxByOrNull { it.date }
+    val currentGrams = runCatching { WeightInput(number, unit, exactGrams).grams() }.getOrNull()
+    val dirty = number.isNotBlank() && (original == null || currentGrams != original.grams || date != original.date || note != original.note || unit != data.settings.unit)
+    fun use(input: WeightInput) { unitName = input.unit.name; number = input.text; exactGrams = input.exactGrams; selectionStart = 0; selectionEnd = number.length; error = null }
+    FormDialog(if (original == null) "记录体重" else "编辑体重", busy, onDismiss, dirty = dirty) {
         LaunchedEffect(Unit) { focus.requestFocus(); keyboard?.show() }
         Text(if (date == LocalDate.now().toString()) "今天 · $date" else date, color = MaterialTheme.colorScheme.onSurfaceVariant)
         UnitSelector(unit, !busy) { next ->
             try {
                 val converted = WeightInput(number, unit, exactGrams).switchTo(next)
-                unitName = converted.unit.name; number = converted.text; exactGrams = converted.exactGrams; error = null
+                use(converted)
             } catch (e: IllegalArgumentException) { error = "请先修正数值，再切换单位：${e.message}" }
         }
-        OutlinedTextField(number, { number = it; exactGrams = null; error = null }, label = { Text("体重 · ${unit.label}") }, singleLine = true,
+        OutlinedTextField(TextFieldValue(number, TextRange(selectionStart.coerceIn(0, number.length), selectionEnd.coerceIn(0, number.length))), {
+            if (it.text != number) exactGrams = null
+            number = it.text; selectionStart = it.selection.start; selectionEnd = it.selection.end; error = null
+        }, label = { Text("体重 · ${unit.label}") }, singleLine = true,
             textStyle = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { if (!busy) save(false) }),
@@ -62,6 +75,14 @@ import java.time.LocalDate
         Text(WeightInput(number, unit, exactGrams).equivalent()?.let { "换算为 $it · 保存后记住所选体重单位" }
             ?: "1 公斤 = 2 斤 · 切换单位自动换算数值", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { use(WeightInput(number, unit, exactGrams).adjust(-1)) }, enabled = !busy && currentGrams != null && currentGrams > 100) { Text("−0.1") }
+            if (prior != null) TextButton(onClick = { use(WeightInput(formatWeight(prior.grams, unit), unit, prior.grams)) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("沿用上次") }
+            OutlinedButton(onClick = { use(WeightInput(number, unit, exactGrams).adjust(1)) }, enabled = !busy && currentGrams != null && currentGrams < Long.MAX_VALUE - 100) { Text("+0.1") }
+        }
+        if (prior != null && currentGrams != null) Text("较 ${prior.date}：${formatDelta(currentGrams.toDouble() - prior.grams, unit)} ${unit.label}", style = MaterialTheme.typography.bodySmall)
+        if (prior != null && currentGrams != null && kotlin.math.abs(currentGrams - prior.grams) > 3000 && runCatching { LocalDate.parse(prior.date).plusDays(7) >= LocalDate.parse(date) }.getOrDefault(false))
+            Text("与最近记录差异较大，可以核对一下单位和数字。确认无误后照常保存。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
         TextButton(onClick = { details = !details }, enabled = !busy) { Text(if (details) "收起日期与备注" else "修改日期 / 添加备注") }
         if (details) {
             DateField(date, { date = it; error = null }, allowFuture = false)
@@ -80,7 +101,7 @@ import java.time.LocalDate
         { deleting = false }, { vm.change("已删除", onDismiss) { it.copy(weights = it.weights.filterNot { w -> w.id == original.id }) } })
 }
 
-@Serializable private data class ValuesDraft(
+@Serializable internal data class ValuesDraft(
     val reps: List<String> = listOf("10"), val loads: List<String> = listOf(""),
     val minutes: String = "", val km: String = "",
 ) {
@@ -110,20 +131,25 @@ import java.time.LocalDate
     }
 }
 
-@Composable private fun ValuesFields(kind: ExerciseKind, unit: WeightUnit, draft: ValuesDraft, onChange: (ValuesDraft) -> Unit) {
+@Composable internal fun ValuesFields(kind: ExerciseKind, unit: WeightUnit, draft: ValuesDraft,
+    completed: List<Int>? = null, onToggle: ((Int) -> Unit)? = null, enabled: Boolean = true, onChange: (ValuesDraft) -> Unit) {
     when (kind) {
         ExerciseKind.STRENGTH -> {
-            Text("逐组填写 · 空白负重表示未设置，0 表示不额外负重", style = MaterialTheme.typography.bodySmall)
+            if (completed == null) Text("逐组填写 · 空白负重表示未设置，0 表示不额外负重", style = MaterialTheme.typography.bodySmall)
             draft.reps.forEachIndexed { index, value ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (completed != null) Checkbox(index in completed, { onToggle?.invoke(index) }, enabled = enabled,
+                        modifier = Modifier.semantics { contentDescription = "完成第${index + 1}组" })
                     OutlinedTextField(value, { text -> onChange(draft.copy(reps = draft.reps.mapIndexed { i, s -> if (i == index) text else s })) },
+                        enabled = enabled && completed?.contains(index) != true,
                         label = { Text("${index + 1}组次数") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(draft.loads[index], { text -> onChange(draft.copy(loads = draft.loads.mapIndexed { i, s -> if (i == index) text else s })) },
+                        enabled = enabled && completed?.contains(index) != true,
                         label = { Text("负重 · ${unit.label}") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.weight(1f))
-                    if (draft.reps.size > 1) TextButton(onClick = { onChange(draft.copy(reps = draft.reps.filterIndexed { i, _ -> i != index }, loads = draft.loads.filterIndexed { i, _ -> i != index })) }, modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 56.dp)) { Text("删") }
+                    if (completed == null && draft.reps.size > 1) TextButton(onClick = { onChange(draft.copy(reps = draft.reps.filterIndexed { i, _ -> i != index }, loads = draft.loads.filterIndexed { i, _ -> i != index })) }, modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 56.dp)) { Text("删") }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (completed == null) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { onChange(draft.copy(reps = draft.reps + draft.reps.first(), loads = draft.loads + draft.loads.first())) }, enabled = draft.reps.size < 100) { Text("＋ 添加一组") }
                 TextButton(onClick = { onChange(draft.copy(reps = List(draft.reps.size) { draft.reps.first() }, loads = List(draft.loads.size) { draft.loads.first() })) }) { Text("首组复制到全部") }
             }
@@ -139,18 +165,23 @@ import java.time.LocalDate
     }
 }
 
-@Composable fun ExerciseForm(original: Exercise?, unit: WeightUnit, busy: Boolean, temporary: Boolean = false, onDismiss: () -> Unit, onSave: (Exercise) -> Unit) {
-    var name by rememberSaveable { mutableStateOf(original?.name ?: "") }
-    var kindName by rememberSaveable { mutableStateOf((original?.kind ?: ExerciseKind.STRENGTH).name) }
+@Composable fun ExerciseForm(original: Exercise?, unit: WeightUnit, busy: Boolean, temporary: Boolean = false, onDismiss: () -> Unit, seed: Exercise? = null, onSave: (Exercise) -> Unit) {
+    val initial = original ?: seed
+    var name by rememberSaveable { mutableStateOf(initial?.name ?: "") }
+    var kindName by rememberSaveable { mutableStateOf((initial?.kind ?: ExerciseKind.STRENGTH).name) }
     val kind = ExerciseKind.valueOf(kindName)
-    var note by rememberSaveable { mutableStateOf(original?.note ?: "") }
-    var draftText by rememberSaveable { mutableStateOf(fitnessJson.encodeToString(ValuesDraft.from(original?.target, unit))) }
+    var note by rememberSaveable { mutableStateOf(initial?.note ?: "") }
+    var draftText by rememberSaveable { mutableStateOf(fitnessJson.encodeToString(ValuesDraft.from(initial?.target, unit))) }
     val draft = fitnessJson.decodeFromString<ValuesDraft>(draftText)
     var error by rememberSaveable { mutableStateOf<String?>(null) }
-    FormDialog(if (original == null) "添加训练项目" else "编辑计划目标", busy, onDismiss) {
+    FormDialog(if (original == null) "添加训练项目" else "编辑计划目标", busy, onDismiss,
+        dirty = name.isNotBlank() && (original == null || name != original.name || kind != original.kind || note != original.note || draft != ValuesDraft.from(original.target, unit))) {
         OutlinedTextField(name, { name = it }, label = { Text("项目名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         if (name.isBlank()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("深蹲", "拉伸", "跑步").forEach { suggestion -> SuggestionChip(onClick = { name = suggestion }, label = { Text(suggestion) }) }
+            listOf("深蹲", "拉伸", "跑步").forEach { suggestion -> SuggestionChip(onClick = {
+                val preset = ExercisePresets.all.first { it.name == suggestion }
+                name = preset.name; kindName = preset.kind.name; draftText = fitnessJson.encodeToString(ValuesDraft.from(preset.target, unit))
+            }, label = { Text(suggestion) }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ExerciseKind.entries.forEach { type -> FilterChip(kind == type, { kindName = type.name }, label = { Text(type.label) }) }
