@@ -1,0 +1,7 @@
+clock_rollback: rejected existing history (IllegalArgumentException)
+draft_only_training_date_count: 1
+draft_only_week_trained_days: 0
+future_recovery_mtime_set: true
+recovery_count_after_next_save: 1
+control_recovery_mtime_set: true
+control_recovery_count_after_next_save: 2
