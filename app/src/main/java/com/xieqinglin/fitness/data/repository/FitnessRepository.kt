@@ -25,11 +25,20 @@ class FitnessRepository(private val database: FitnessDatabase) {
         }
     }
 
-    suspend fun saveWeight(entry: WeightEntry, originalId: String?, overwrite: Boolean) = mutate { data ->
+    suspend fun saveWeight(entry: WeightEntry, originalId: String?, overwrite: Boolean, unit: WeightUnit? = null) = mutate { data ->
         val conflict = data.weights.find { it.date == entry.date && it.id != originalId }
         require(conflict == null || overwrite) { "该日期已有体重，请确认覆盖" }
-        data.copy(weights = data.weights.filterNot { it.id == originalId || it.date == entry.date } + entry)
+        data.copy(weights = data.weights.filterNot { it.id == originalId || it.date == entry.date } + entry,
+            settings = if (unit == null) data.settings else data.settings.copy(unit = unit))
     }
+
+    suspend fun completeTraining(date: String, ids: Set<String>): CompletionUndo {
+        var token: CompletionUndo? = null
+        mutate { current -> TrainingCompletion.complete(current, date, ids).let { token = it.undo; it.data } }
+        return requireNotNull(token)
+    }
+
+    suspend fun undoCompletion(token: CompletionUndo) = mutate { TrainingCompletion.undo(it, token) }
 
     suspend fun saveExercise(date: String, exercise: Exercise) = mutate { data ->
         val plan = data.plan(date) ?: DailyPlan(date = date)

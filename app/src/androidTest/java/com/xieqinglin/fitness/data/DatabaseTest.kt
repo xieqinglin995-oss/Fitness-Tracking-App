@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.xieqinglin.fitness.backup.BackupCodec
 import com.xieqinglin.fitness.data.local.FitnessDatabase
 import com.xieqinglin.fitness.data.local.WeightRow
+import com.xieqinglin.fitness.data.local.SettingsRow
 import com.xieqinglin.fitness.data.repository.FitnessRepository
 import com.xieqinglin.fitness.domain.*
 import kotlinx.coroutines.runBlocking
@@ -100,5 +101,28 @@ class DatabaseTest {
             disk = Room.databaseBuilder(context, FitnessDatabase::class.java, name).build()
             assertEquals(data, FitnessRepository(disk).snapshot())
         } finally { disk.close(); context.deleteDatabase(name) }
+    }
+
+    @Test fun legacyDatabaseSettingsAndBodyUnitUpdatePreserveTrainingUnit() = runBlocking {
+        db.dao().putSettings(SettingsRow(payload = "{\"unit\":\"JIN\",\"goalGrams\":75000}"))
+        assertEquals(WeightUnit.JIN, repo.snapshot().settings.loadUnit)
+        repo.saveWeight(WeightEntry(date = "2026-01-01", grams = 80000), null, false, WeightUnit.KG)
+        assertEquals(WeightUnit.KG, repo.snapshot().settings.unit)
+        assertEquals(WeightUnit.JIN, repo.snapshot().settings.loadUnit)
+    }
+
+    @Test fun batchCompletionAndUndoArePersistedAsOneChange() = runBlocking {
+        val date = "2026-01-01"
+        val items = listOf(
+            Exercise(name = "跑步", kind = ExerciseKind.DISTANCE, target = Values(kilometers = 3.0)),
+            Exercise(name = "拉伸", kind = ExerciseKind.DURATION, target = Values(seconds = 600.0)),
+        )
+        repo.mutate { FitnessData(plans = listOf(DailyPlan(date = date, exercises = items))) }
+        val initial = repo.snapshot()
+        val token = repo.completeTraining(date, items.map { it.id }.toSet())
+        assertEquals(DayStatus.DONE, repo.snapshot().dayStatus(date))
+        assertEquals(2, repo.snapshot().executions.size)
+        repo.undoCompletion(token)
+        assertEquals(initial, repo.snapshot())
     }
 }

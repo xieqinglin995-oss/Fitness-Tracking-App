@@ -16,34 +16,49 @@ import com.xieqinglin.fitness.domain.*
 import java.time.LocalDate
 import kotlin.math.roundToLong
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable fun TrendsScreen(data: FitnessData, today: LocalDate, onEdit: (WeightEntry?) -> Unit, onTraining: (String) -> Unit) {
     var range by rememberSaveable { mutableIntStateOf(30) }
+    var showGoal by rememberSaveable { mutableStateOf(false) }
+    var showAverage by rememberSaveable { mutableStateOf(true) }
+    var explain by rememberSaveable { mutableStateOf(false) }
     val from = if (range == 0) null else today.minusDays(range.toLong() - 1)
     val stats = remember(data.weights, from, today) { Statistics.stats(data.weights, from, today) }
     val unit = data.settings.unit
-    val trainingDates = data.executions.filter { (from == null || it.date >= from.toString()) && it.date <= today.toString() }.map { it.date }.distinct().sorted()
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val rangeLabel = if (range == 0) "全部历史" else "近 $range 天"
+    val trainingDates = data.executions.filter { it.status != ExecutionStatus.SKIPPED && (from == null || it.date >= from.toString()) && it.date <= today.toString() }.map { it.date }.distinct().sorted()
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Text("看见变化，尊重每一天", style = MaterialTheme.typography.headlineMedium)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(7, 30, 90, 0).forEach { days -> FilterChip(range == days, { range = days }, label = { Text(if (days == 0) "全部" else "近 $days 天") }) }
             }
         }
-        item { SectionCard { WeightChart(data.weights, from, today, unit, data.settings.goalGrams) } }
+        item { SectionCard {
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Metric("最近体重", stats.latest?.let { "${formatWeight(it.grams, unit)} ${unit.label}" } ?: "暂无记录", Modifier.weight(1f), stats.latest?.date)
+                Metric("阶段变化", stats.change?.let { "${formatDelta(it, unit)} ${unit.label}" } ?: "数据不足", Modifier.weight(1f), "${stats.entries.size} 天记录 · $rangeLabel")
+            }
+        } }
+        item { SectionCard {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("体重走势", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = { explain = !explain }) { Text(if (explain) "收起说明" else "图表说明") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(showAverage, { showAverage = !showAverage }, label = { Text("7 日均值") })
+                if (data.settings.goalGrams != null) FilterChip(showGoal, { showGoal = !showGoal }, label = { Text("目标线") })
+            }
+            WeightChart(data.weights, from, today, unit, if (showGoal) data.settings.goalGrams else null, showAverage = showAverage)
+            if (explain) Text("均值使用当日及前 6 天的实际记录，至少 3 天记录才显示。缺失日期不补值。目标线默认隐藏，避免压缩日常波动。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } }
         if (trainingDates.isNotEmpty()) item { SectionCard {
             Text("● 实际训练日期", style = MaterialTheme.typography.titleMedium)
-            Text("点击日期查看计划与实际。此标记不表示训练与体重变化存在因果关系。", style = MaterialTheme.typography.bodySmall)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 trainingDates.forEach { date -> AssistChip(onClick = { onTraining(date) }, label = { Text("● ${date.substring(5)}") }) }
             }
         } }
         item { SectionCard {
-            Text("阶段概览", style = MaterialTheme.typography.titleLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Metric("最近体重", stats.latest?.let { "${formatWeight(it.grams, unit)} ${unit.label}" } ?: "暂无记录", Modifier.weight(1f), stats.latest?.date)
-                Metric("阶段变化", stats.change?.let { "${formatDelta(it, unit)} ${unit.label}" } ?: "数据不足", Modifier.weight(1f), if (stats.entries.size >= 2) "${stats.entries.first().date}\n至 ${stats.entries.last().date}" else null)
-            }
-            HorizontalDivider()
+            Text("更多数据", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Metric("较上次变化", stats.sincePrevious?.let { "${formatDelta(it, unit)} ${unit.label}" } ?: "数据不足", Modifier.weight(1f), stats.previous?.let { "${it.date}\n至 ${stats.latest!!.date}" })
                 Metric("区间平均", stats.mean?.let { "${formatWeight(it.roundToLong(), unit)} ${unit.label}" } ?: "暂无记录", Modifier.weight(1f), "记录 ${stats.entries.size} 天")

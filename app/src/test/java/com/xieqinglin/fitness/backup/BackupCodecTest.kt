@@ -10,7 +10,19 @@ class BackupCodecTest {
     private val data = FitnessData(weights = listOf(WeightEntry(date = "2026-11-01", grams = 80250)), settings = Settings(WeightUnit.JIN, 75000))
     private fun rejected(data: FitnessData) = assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data), today) }.isFailure)
     @Test fun allFieldsRoundTrip() { assertEquals(data, BackupCodec.decode(BackupCodec.encode(data), today).data) }
-    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":1", "\"schemaVersion\":2"), today) }.isFailure) }
+    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":2", "\"schemaVersion\":3"), today) }.isFailure) }
+    @Test fun legacyV1BackupMigratesCombinedUnitWithoutLosingRecords() {
+        val legacy = BackupCodec.encode(data).replace("\"schemaVersion\":2", "\"schemaVersion\":1").replace(",\"loadUnit\":\"JIN\"", "")
+        assertEquals(data, BackupCodec.decode(legacy, today).data)
+    }
+    @Test fun missingV2LoadUnitCannotSilentlyChangePreference() {
+        val incomplete = BackupCodec.encode(data).replace(",\"loadUnit\":\"JIN\"", "")
+        assertTrue(runCatching { BackupCodec.decode(incomplete, today) }.isFailure)
+    }
+    @Test fun independentBodyAndLoadUnitsRoundTrip() {
+        val split = data.copy(settings = Settings(WeightUnit.JIN, 75000, WeightUnit.KG))
+        assertEquals(split, BackupCodec.decode(BackupCodec.encode(split), today).data)
+    }
     @Test fun brokenJsonIsRejected() { assertTrue(runCatching { BackupCodec.decode("{broken}", today) }.isFailure) }
     @Test fun countMismatchIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"weights\":1", "\"weights\":2"), today) }.isFailure) }
     @Test fun duplicateDatesAreRejected() { rejected(data.copy(weights = data.weights + data.weights.single().copy(id = newId()))) }

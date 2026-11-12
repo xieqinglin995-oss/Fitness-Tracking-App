@@ -111,3 +111,10 @@ fun Values.description(kind: ExerciseKind, unit: WeightUnit): String = when (kin
     ExerciseKind.DURATION -> "${formatNumber((seconds ?: 0.0) / 60)} 分钟"
     ExerciseKind.DISTANCE -> "${formatNumber(kilometers ?: 0.0)} km" + (seconds?.let { " · ${formatNumber(it / 60)} 分钟" } ?: "")
 }
+
+fun Values.summary(kind: ExerciseKind, unit: WeightUnit): String = when {
+    kind != ExerciseKind.STRENGTH -> description(kind, unit)
+    sets.distinct().size == 1 -> "${sets.size} 组 × ${sets.first().reps} 次" +
+        (sets.first().loadGrams?.let { " · ${formatWeight(it, unit)} ${unit.label}" } ?: "")
+    else -> "${sets.size} 组 · ${sets.joinToString(" / ") { it.reps.toString() }} 次"
+}

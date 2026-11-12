@@ -9,39 +9,53 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import androidx.compose.ui.res.stringResource
+import com.xieqinglin.fitness.R
 import com.xieqinglin.fitness.domain.*
 import com.xieqinglin.fitness.presentation.FitnessViewModel
 
 @Composable fun SettingsScreen(data: FitnessData, vm: FitnessViewModel, busy: Boolean, onExport: () -> Unit, onImport: () -> Unit) {
     var goalOpen by rememberSaveable { mutableStateOf(false) }
     val unit = data.settings.unit
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val lastBackup by vm.lastBackup.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val version = remember { context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty() }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { SectionCard {
-            Text("按自己的习惯记录", style = MaterialTheme.typography.titleLarge)
-            Text("体重与训练负重单位")
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                WeightUnit.entries.forEach { choice -> FilterChip(unit == choice, { vm.change { it.copy(settings = it.settings.copy(unit = choice)) } },
-                    enabled = !busy, label = { Text(choice.label) }) }
+            Text("记录单位", style = MaterialTheme.typography.titleMedium)
+            Text("体重", style = MaterialTheme.typography.bodyMedium)
+            UnitSelector(unit, !busy) { choice ->
+                vm.change { it.copy(settings = it.settings.copy(unit = choice)) }
             }
-            Text("1 kg = 2 斤。切换只改变显示，不改变底层记录。", style = MaterialTheme.typography.bodySmall)
+            Text("训练负重", style = MaterialTheme.typography.bodyMedium)
+            UnitSelector(data.settings.loadUnit, !busy) { choice ->
+                vm.change { it.copy(settings = it.settings.copy(loadUnit = choice)) }
+            }
+            Text("1 公斤 = 2 斤。体重与负重可分别设置，历史数值会自动换算。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
         item { SectionCard {
-            Text("目标体重（可选）", style = MaterialTheme.typography.titleLarge)
+            Text("目标体重", style = MaterialTheme.typography.titleMedium)
             Text(data.settings.goalGrams?.let { "${formatWeight(it, unit)} ${unit.label}" } ?: "未设置")
             Text("目标只作为图表参考，增重、减重或维持都由你决定。", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { goalOpen = true }, enabled = !busy) { Text(if (data.settings.goalGrams == null) "设置目标" else "修改 / 取消目标") }
         } }
         item { SectionCard {
-            Text("备份与恢复", style = MaterialTheme.typography.titleLarge)
+            Text("备份与恢复", style = MaterialTheme.typography.titleMedium)
+            Text(lastBackup?.let { time -> "最近导出：" + runCatching { OffsetDateTime.parse(time).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) }.getOrDefault(time) }
+                ?: "暂无本机导出时间记录", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
             Text("${data.weights.size} 条体重 · ${data.plans.size} 日计划\n${data.executions.size} 条实际记录 · ${data.templates.size} 个模板")
-            Button(onClick = onExport, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("导出完整 JSON 备份") }
-            OutlinedButton(onClick = onImport, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("从备份恢复…") }
+            Button(onClick = onExport, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("导出备份文件") }
+            OutlinedButton(onClick = onImport, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("从备份恢复") }
             Text("导出时请选择自己能找回的位置。恢复会完整替换本机数据，须先确认并保存现有数据备份。", style = MaterialTheme.typography.bodySmall)
         } }
         item { SectionCard {
-            Text("数据只在你的设备上", style = MaterialTheme.typography.titleLarge)
+            Text("本地存储", style = MaterialTheme.typography.titleMedium)
             Text("无需账号，核心功能离线可用，不自动上传健康记录。卸载或清除应用数据会删除所有本地记录，请先导出备份。")
-            Text("日日健身 · 1.0.0\n记录属于日期，不随时区改变。", style = MaterialTheme.typography.bodySmall)
+            Text("${stringResource(R.string.app_name)} · $version", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
     }
     if (goalOpen) {

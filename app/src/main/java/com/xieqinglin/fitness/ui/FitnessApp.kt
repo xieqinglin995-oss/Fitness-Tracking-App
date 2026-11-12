@@ -16,6 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.xieqinglin.fitness.R
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xieqinglin.fitness.domain.*
 import com.xieqinglin.fitness.presentation.FitnessViewModel
@@ -37,7 +41,11 @@ import java.time.LocalDate
     var executionDate by rememberSaveable { mutableStateOf<String?>(null) }
     var executionId by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(vm) { vm.messages.collect { snackbar.showSnackbar(it) } }
+    LaunchedEffect(vm) { vm.messages.collect { notice ->
+        val result = snackbar.showSnackbar(notice.text, actionLabel = if (notice.undo != null) "撤销" else null,
+            withDismissAction = notice.undo != null, duration = if (notice.undo != null) SnackbarDuration.Long else SnackbarDuration.Short)
+        if (result == SnackbarResult.ActionPerformed) notice.undo?.let(vm::undoCompletion)
+    } }
     LaunchedEffect(Unit) { while (true) { today = LocalDate.now(); delay(15_000) } }
     BackHandler(tab != 0 && !busy) { tab = 0 }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { it?.let(vm::export) }
@@ -46,10 +54,10 @@ import java.time.LocalDate
     fun openWeight(entry: WeightEntry?, date: String = today.toString()) { weightId = entry?.id; weightDate = date; weightOpen = true }
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(listOf("日日健身", "训练计划", "体重趋势", "设置与数据")[tab], fontWeight = FontWeight.Bold) },
+            TopAppBar(title = { Text(listOf(stringResource(R.string.app_name), "训练计划", "体重趋势", "设置与数据")[tab], style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
                 actions = { if (tab != 3) IconButton(onClick = { tab = 3 }) { Icon(Icons.Outlined.Settings, "设置") } else IconButton(onClick = { tab = 0 }) { Icon(Icons.Outlined.Close, "返回今天") } })
         },
-        bottomBar = { if (tab != 3) NavigationBar {
+        bottomBar = { if (tab != 3) NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
             listOf("今天" to Icons.Outlined.Home, "计划" to Icons.Outlined.CalendarMonth, "趋势" to Icons.AutoMirrored.Outlined.ShowChart).forEachIndexed { index, (label, icon) ->
                 NavigationBarItem(selected = tab == index, onClick = { tab = index }, icon = { Icon(icon, label) }, label = { Text(label) })
             }
@@ -71,7 +79,7 @@ import java.time.LocalDate
     }
     if (weightOpen) WeightForm(data, data.weights.find { it.id == weightId }, weightDate, vm, busy) { weightOpen = false }
     val executionItem = data.plan(executionDate.orEmpty())?.exercises?.find { it.id == executionId }
-    if (executionItem != null) ExecutionForm(executionDate!!, executionItem, data.execution(executionItem.id), vm, data.settings.unit, busy) { executionId = null; executionDate = null }
+    if (executionItem != null) ExecutionForm(executionDate!!, executionItem, data.execution(executionItem.id), vm, data.settings.loadUnit, busy) { executionId = null; executionDate = null }
     preview?.let { backup ->
         val c = backup.counts
         ConfirmDialog("完整替换本机数据？", "备份时间：${backup.exportedAt}\n将导入：${c.weights} 条体重、${c.plans} 日计划、${c.executions} 条实际、${c.templates} 个模板及设置。\n\n本机现有 ${data.weights.size} 条体重、${data.plans.size} 日计划、${data.executions.size} 条实际、${data.templates.size} 个模板及设置将被完整替换。\n\n继续后请先选择原数据备份的保存位置；备份成功后才会恢复。取消文件选择不会修改数据。", "备份原数据并恢复", busy,
@@ -86,51 +94,77 @@ import java.time.LocalDate
     val unit = data.settings.unit
     val plan = data.plan(date)
     val done = plan?.exercises.orEmpty().count { data.execution(it.id)?.status == ExecutionStatus.DONE }
+    val pending = TrainingCompletion.eligible(data, date).size
+    val prior = data.weights.filter { it.date < date }.maxByOrNull { it.date }
     var temporaryOpen by rememberSaveable { mutableStateOf(false) }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(displayDate(today), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("照顾自己，从今天开始", style = MaterialTheme.typography.headlineMedium)
-            Text("记录一点变化，完成自己的节奏。", style = MaterialTheme.typography.bodyMedium)
-        } }
+    var batchOpen by rememberSaveable { mutableStateOf(false) }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Text(displayDate(today), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
-                Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("今日体重", style = MaterialTheme.typography.titleMedium)
-                    if (weight != null) Text("${formatWeight(weight.grams, unit)} ${unit.label}", fontSize = 38.sp, fontWeight = FontWeight.Bold)
+            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF18243E), contentColor = Color.White), modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("今日体重", style = MaterialTheme.typography.titleMedium)
+                        Text(if (weight == null) "等待记录" else "已记录", style = MaterialTheme.typography.labelMedium, color = Color(0xFFA5E4D4))
+                    }
+                    if (weight != null) {
+                        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(formatWeight(weight.grams, unit), fontSize = 36.sp, fontWeight = FontWeight.Bold)
+                            Text(unit.label, modifier = Modifier.padding(bottom = 6.dp), style = MaterialTheme.typography.titleMedium)
+                        }
+                        Text(if (prior != null) "较 ${prior.date.substring(5)}  ${formatDelta(weight.grams.toDouble() - prior.grams, unit)} ${unit.label}" else "第一条体重，记录从这里开始", color = Color(0xFFC3CDE0), style = MaterialTheme.typography.bodySmall)
+                    }
                     else {
                         Text("今天还没记录", style = MaterialTheme.typography.headlineMedium)
-                        Text(latest?.let { "最近一次：${it.date} · ${formatWeight(it.grams, unit)} ${unit.label}" } ?: "第一次记录，不需要任何准备。")
+                        Text(latest?.let { "最近 ${it.date} · ${formatWeight(it.grams, unit)} ${unit.label}" } ?: "支持斤和公斤，按自己的习惯来。", color = Color(0xFFC3CDE0), style = MaterialTheme.typography.bodySmall)
                     }
-                    Button(onClick = onWeight, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(8.dp)); Text(if (weight == null) "记录今日体重" else "编辑今日体重") }
+                    Button(onClick = onWeight, enabled = !busy, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB6EADB), contentColor = Color(0xFF142E2B))) {
+                        Icon(if (weight == null) Icons.Outlined.Add else Icons.Outlined.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
+                        Text(if (weight == null) "记录今日体重" else "编辑今日体重")
+                    }
                 }
             }
         }
         item { SectionCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("今天的训练", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = onPlan) { Text("安排训练") }
+                Column(Modifier.weight(1f)) {
+                    Text("今日训练", style = MaterialTheme.typography.titleLarge)
+                    Text(if (plan?.exercises?.isNotEmpty() == true) "完成 $done / ${plan.exercises.size} 项 · ${data.dayStatus(date).label}" else data.dayStatus(date).label,
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onPlan) { Text("管理计划") }
             }
-            Text("${data.dayStatus(date).label}" + if (plan?.exercises?.isNotEmpty() == true) " · 完成 $done / ${plan.exercises.size} 项 · 跳过 ${plan.exercises.count { data.execution(it.id)?.status == ExecutionStatus.SKIPPED }} 项" else "", color = MaterialTheme.colorScheme.primary)
             if (plan?.exercises?.isNotEmpty() == true) {
-                LinearProgressIndicator(progress = { done.toFloat() / plan.exercises.size }, modifier = Modifier.fillMaxWidth())
-                Text("归属日期：$date", style = MaterialTheme.typography.labelMedium)
+                LinearProgressIndicator(progress = { done.toFloat() / plan.exercises.size }, modifier = Modifier.fillMaxWidth().height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { batchOpen = true }, enabled = !busy && pending > 0, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Outlined.DoneAll, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (pending > 0) "批量完成" else "训练已结束")
+                    }
+                    OutlinedButton(onClick = { temporaryOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, "临时新增训练") }
+                }
             } else if (plan?.rest != true) {
-                Text("今天还没有训练安排。去计划页添加项目，或设为休息日。")
-                OutlinedButton(onClick = { vm.change { PlanOperations.rest(it, date, true) } }, enabled = !busy) { Text("设为休息日") }
-            } else Text("给恢复留一点时间，也是一种安排。")
-            TextButton(onClick = { temporaryOpen = true }, enabled = !busy) { Text("＋ 临时新增训练") }
+                Text("添加今天的项目，或从计划页应用模板。", style = MaterialTheme.typography.bodyMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { temporaryOpen = true }, enabled = !busy) { Text("添加训练") }
+                    TextButton(onClick = { vm.change { PlanOperations.rest(it, date, true) } }, enabled = !busy) { Text("设为休息日") }
+                }
+            } else {
+                Text("今天安排休息，恢复也是训练的一部分。", style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { temporaryOpen = true }, enabled = !busy) { Text("临时新增训练") }
+            }
         } }
         plan?.exercises.orEmpty().forEach { exercise -> item(key = exercise.id) { WorkoutCard(exercise, date, data, vm, busy, onExecute = { onExecute(date, exercise.id) }) } }
         item { SectionCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("近 7 天", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Text("近期体重", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = onTrend) { Text("查看趋势") }
             }
-            WeightChart(data.weights, today.minusDays(6), today, unit, data.settings.goalGrams, compact = true, onOpen = onTrend)
+            WeightChart(data.weights, today.minusDays(6), today, unit, null, compact = true, onOpen = onTrend)
         } }
     }
-    if (temporaryOpen) ExerciseForm(null, unit, busy, temporary = true, onDismiss = { temporaryOpen = false }) { exercise ->
+    if (batchOpen) BatchCompletionDialog(data, date, vm, busy, onDismiss = { batchOpen = false })
+    if (temporaryOpen) ExerciseForm(null, data.settings.loadUnit, busy, temporary = true, onDismiss = { temporaryOpen = false }) { exercise ->
         vm.action(onSuccess = { temporaryOpen = false }) { vm.repository.saveExercise(date, exercise) }
     }
 }

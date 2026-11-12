@@ -38,7 +38,12 @@ fun now(): String = OffsetDateTime.now().toString()
 @Serializable data class WorkoutTemplate(
     val id: String = newId(), val name: String, val exercises: List<Exercise>,
 )
-@Serializable data class Settings(val unit: WeightUnit = WeightUnit.KG, val goalGrams: Long? = null)
+@Serializable data class Settings(
+    val unit: WeightUnit = WeightUnit.KG,
+    val goalGrams: Long? = null,
+    // Old installations used one unit for both. Preserve that choice on upgrade.
+    val loadUnit: WeightUnit = unit,
+)
 @Serializable data class FitnessData(
     val weights: List<WeightEntry> = emptyList(), val plans: List<DailyPlan> = emptyList(),
     val executions: List<Execution> = emptyList(), val templates: List<WorkoutTemplate> = emptyList(),

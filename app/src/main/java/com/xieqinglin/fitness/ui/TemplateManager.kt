@@ -33,7 +33,7 @@ import kotlinx.serialization.encodeToString
         TextButton(onClick = onDismiss, enabled = !busy) { Text("关闭") }
     }
     val editing = data.templates.find { it.id == editorId }
-    if (newTemplate || editing != null) TemplateEditor(editing, data.settings.unit, busy, { newTemplate = false; editorId = null }) { template ->
+    if (newTemplate || editing != null) TemplateEditor(editing, data.settings.loadUnit, busy, { newTemplate = false; editorId = null }) { template ->
         vm.change("模板已保存", { newTemplate = false; editorId = null }) { it.copy(templates = it.templates.filterNot { t -> t.id == template.id } + template) }
     }
     deleteId?.let { id -> ConfirmDialog("删除模板？", "已应用到日期的独立计划与历史实际记录都会保留。", "删除", busy,

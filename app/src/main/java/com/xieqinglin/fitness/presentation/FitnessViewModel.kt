@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 
 data class ScreenState(val data: FitnessData = FitnessData(), val loaded: Boolean = false, val error: String? = null)
+data class Notice(val text: String, val undo: CompletionUndo? = null)
 
 class FitnessViewModel(application: Application) : AndroidViewModel(application) {
     val repository = (application as FitnessApplication).repository
@@ -26,8 +27,11 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
     private val _preview = MutableStateFlow<Backup?>(null)
     val preview = _preview.asStateFlow()
     private var importText: String? = null
-    private val notices = Channel<String>(Channel.BUFFERED)
+    private val notices = Channel<Notice>(Channel.BUFFERED)
     val messages = notices.receiveAsFlow()
+    private val preferences = application.getSharedPreferences("device_preferences", 0)
+    private val _lastBackup = MutableStateFlow(preferences.getString("last_backup", null))
+    val lastBackup = _lastBackup.asStateFlow()
     private val mutex = Mutex()
     private var observing: Job? = null
 
@@ -41,16 +45,16 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun action(message: String = "已保存", onSuccess: () -> Unit = {}, block: suspend () -> Unit) {
+    fun action(message: String = "已保存", onSuccess: () -> Unit = {}, undo: () -> CompletionUndo? = { null }, block: suspend () -> Unit) {
         if (_busy.value) return
         _busy.value = true
         viewModelScope.launch {
             try {
                 mutex.withLock { block() }
                 onSuccess()
-                notices.send(message)
+                notices.send(Notice(message, undo()))
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { notices.send(error.message ?: "操作失败，请重试") }
+            catch (error: Exception) { notices.send(Notice(error.message ?: "操作失败，请重试")) }
             finally { _busy.value = false }
         }
     }
@@ -58,10 +62,24 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
     fun change(message: String = "已保存", onSuccess: () -> Unit = {}, transform: (FitnessData) -> FitnessData) =
         action(message, onSuccess) { repository.mutate(transform) }
 
-    fun export(uri: Uri) = action("备份已保存到：$uri") {
+    fun completeTraining(date: String, ids: Set<String>, onSuccess: () -> Unit = {}) {
+        var token: CompletionUndo? = null
+        action("所选训练已完成", onSuccess, undo = { token }) { token = repository.completeTraining(date, ids) }
+    }
+
+    fun undoCompletion(token: CompletionUndo) = action("已撤销本次完成") { repository.undoCompletion(token) }
+
+    private suspend fun markBackup() = withContext(Dispatchers.IO) {
+        val time = now()
+        require(preferences.edit().putString("last_backup", time).commit()) { "备份文件已写出，但备份时间保存失败" }
+        _lastBackup.value = time
+    }
+
+    fun export(uri: Uri) = action("备份已保存到所选位置") {
         val data = repository.snapshot()
         val text = withContext(Dispatchers.Default) { BackupCodec.encode(data) }
         write(uri, text)
+        markBackup()
     }
 
     fun inspect(uri: Uri) = action("备份校验通过，请核对恢复范围") {
@@ -86,11 +104,12 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
 
     fun cancelImport() { importText = null; _preview.value = null }
 
-    fun restoreWithSafetyCopy(uri: Uri) = action("恢复完成；原数据备份已保存到：$uri", onSuccess = ::cancelImport) {
+    fun restoreWithSafetyCopy(uri: Uri) = action("恢复完成，原数据已备份", onSuccess = ::cancelImport) {
         val text = requireNotNull(importText) { "请重新选择备份文件" }
         // Finish writing the user-accessible safety copy before starting the replacement transaction.
         val data = repository.snapshot()
         write(uri, withContext(Dispatchers.Default) { BackupCodec.encode(data) })
+        markBackup()
         repository.restore(text)
     }
 

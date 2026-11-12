@@ -2,11 +2,18 @@ package com.xieqinglin.fitness.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.unit.dp
 import com.xieqinglin.fitness.backup.fitnessJson
 import com.xieqinglin.fitness.domain.*
@@ -16,28 +23,50 @@ import kotlinx.serialization.encodeToString
 import java.time.LocalDate
 
 @Composable fun WeightForm(data: FitnessData, original: WeightEntry?, initialDate: String, vm: FitnessViewModel, busy: Boolean, onDismiss: () -> Unit) {
-    val unit = data.settings.unit
+    var unitName by rememberSaveable { mutableStateOf(data.settings.unit.name) }
+    val unit = WeightUnit.valueOf(unitName)
     var date by rememberSaveable { mutableStateOf(original?.date ?: initialDate) }
     var number by rememberSaveable { mutableStateOf(original?.let { formatWeight(it.grams, unit) } ?: "") }
+    var exactGrams by rememberSaveable { mutableStateOf(original?.grams) }
     var note by rememberSaveable { mutableStateOf(original?.note ?: "") }
+    var details by rememberSaveable { mutableStateOf(initialDate != LocalDate.now().toString() || original?.note?.isNotBlank() == true) }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var overwrite by rememberSaveable { mutableStateOf(false) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     fun save(allowOverwrite: Boolean) {
         try {
             Rules.pastDate(date)
-            val grams = Rules.weight(number, unit)
+            val grams = WeightInput(number, unit, exactGrams).grams()
             require(note.length <= 500) { "备注不能超过 500 字" }
             if (data.weights.any { it.date == date && it.id != original?.id } && !allowOverwrite) { overwrite = true; return }
             val entry = WeightEntry(original?.id ?: newId(), date, grams, note, original?.createdAt ?: now())
-            vm.action(onSuccess = onDismiss) { vm.repository.saveWeight(entry, original?.id, allowOverwrite) }
+            vm.action(onSuccess = onDismiss) { vm.repository.saveWeight(entry, original?.id, allowOverwrite, unit) }
         } catch (e: IllegalArgumentException) { error = e.message }
     }
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     FormDialog(if (original == null) "记录体重" else "编辑体重", busy, onDismiss) {
-        DateField(date, { date = it; error = null }, allowFuture = false)
-        OutlinedTextField(number, { number = it; error = null }, label = { Text("体重 · ${unit.label}") }, singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(note, { note = it }, label = { Text("备注（可选，最多 500 字）") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
+        LaunchedEffect(Unit) { focus.requestFocus(); keyboard?.show() }
+        Text(if (date == LocalDate.now().toString()) "今天 · $date" else date, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        UnitSelector(unit, !busy) { next ->
+            try {
+                val converted = WeightInput(number, unit, exactGrams).switchTo(next)
+                unitName = converted.unit.name; number = converted.text; exactGrams = converted.exactGrams; error = null
+            } catch (e: IllegalArgumentException) { error = "请先修正数值，再切换单位：${e.message}" }
+        }
+        OutlinedTextField(number, { number = it; exactGrams = null; error = null }, label = { Text("体重 · ${unit.label}") }, singleLine = true,
+            textStyle = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (!busy) save(false) }),
+            modifier = Modifier.fillMaxWidth().focusRequester(focus))
+        Text(WeightInput(number, unit, exactGrams).equivalent()?.let { "换算为 $it · 保存后记住所选体重单位" }
+            ?: "1 公斤 = 2 斤 · 切换单位自动换算数值", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = { details = !details }, enabled = !busy) { Text(if (details) "收起日期与备注" else "修改日期 / 添加备注") }
+        if (details) {
+            DateField(date, { date = it; error = null }, allowFuture = false)
+            OutlinedTextField(note, { note = it }, label = { Text("备注（可选，最多 500 字）") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
+        }
         ErrorText(error)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             if (original != null) TextButton(onClick = { deleting = true }, enabled = !busy) { Text("删除", color = MaterialTheme.colorScheme.error) }
@@ -150,11 +179,17 @@ import java.time.LocalDate
     var deleting by rememberSaveable { mutableStateOf(false) }
     val draft = fitnessJson.decodeFromString<ValuesDraft>(draftText)
     val status = ExecutionStatus.valueOf(statusName)
+    val screen by vm.state.collectAsStateWithLifecycle()
+    val previous = screen.data.previousExecution(item, date)
     FormDialog("记录实际 · ${existing?.nameSnapshot ?: item.name}", busy, onDismiss) {
         Text("训练归属日期：$date", style = MaterialTheme.typography.titleSmall)
         Text("计划目标：${item.target.description(item.kind, unit)}", style = MaterialTheme.typography.bodyMedium)
         if (existing != null && existing.targetSnapshot != item.target) Text("开始记录时目标：${existing.targetSnapshot.description(existing.kindSnapshot, unit)}")
         Text(if (existing == null) "下方实际值默认使用计划目标，请核对或修改，再明确选择状态。" else "实际与目标分别保存，可修正或撤销完成状态。", style = MaterialTheme.typography.bodySmall)
+        if (existing == null && previous != null) {
+            Text("上次 ${previous.date}：${previous.actual.summary(previous.kindSnapshot, unit)}", style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { draftText = fitnessJson.encodeToString(ValuesDraft.from(previous.actual, unit)); error = null }, enabled = !busy) { Text("使用上次实际") }
+        }
         ValuesFields(item.kind, unit, draft) { draftText = fitnessJson.encodeToString(it); error = null }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(ExecutionStatus.DRAFT to "进行中", ExecutionStatus.DONE to "完成", ExecutionStatus.SKIPPED to "跳过").forEach { (s, label) ->

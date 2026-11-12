@@ -1,6 +1,7 @@
 package com.xieqinglin.fitness.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,8 +21,19 @@ fun displayDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPatte
 
 @Composable fun SectionCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        shape = MaterialTheme.shapes.large) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+        shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable fun UnitSelector(unit: WeightUnit, enabled: Boolean = true, onChange: (WeightUnit) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        WeightUnit.entries.forEachIndexed { index, option ->
+            SegmentedButton(selected = unit == option, onClick = { onChange(option) }, enabled = enabled,
+                shape = SegmentedButtonDefaults.itemShape(index, WeightUnit.entries.size),
+                label = { Text(if (option == WeightUnit.KG) "公斤 kg" else "斤") })
+        }
     }
 }
 

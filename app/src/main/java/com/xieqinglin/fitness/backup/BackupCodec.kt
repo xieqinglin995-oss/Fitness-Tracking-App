@@ -27,13 +27,21 @@ val fitnessJson = Json { encodeDefaults = true; prettyPrint = false; isLenient =
 object BackupCodec {
     const val MAX_BYTES = 32 * 1024 * 1024
     fun counts(data: FitnessData) = RecordCounts(data.weights.size, data.plans.size, data.executions.size, data.templates.size)
-    fun encode(data: FitnessData): String = fitnessJson.encodeToString(Backup(1, now(), counts(data), data))
+    fun encode(data: FitnessData): String = fitnessJson.encodeToString(Backup(2, now(), counts(data), data))
 
     fun decode(text: String, today: LocalDate = LocalDate.now()): Backup {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "备份文件不能超过 32 MB" }
-        val root = fitnessJson.parseToJsonElement(text).jsonObject
-        require(root["schemaVersion"]?.jsonPrimitive?.intOrNull == 1) { "备份版本不兼容，仅支持 schemaVersion 1" }
-        val backup = fitnessJson.decodeFromString<Backup>(text)
+        var root = fitnessJson.parseToJsonElement(text).jsonObject
+        val version = root["schemaVersion"]?.jsonPrimitive?.intOrNull
+        require(version == 1 || version == 2) { "备份版本不兼容，仅支持 schemaVersion 1 和 2" }
+        if (version == 1) {
+            val data = requireNotNull(root["data"]).jsonObject
+            val settings = requireNotNull(data["settings"]).jsonObject
+            require("loadUnit" !in settings) { "v1 备份包含不支持的字段" }
+            root = JsonObject(root + ("data" to JsonObject(data + ("settings" to JsonObject(settings +
+                ("loadUnit" to requireNotNull(settings["unit"]) { "备份缺少单位" }))))))
+        }
+        val backup = fitnessJson.decodeFromJsonElement(Backup.serializer(), root)
         checkTypes(root, fitnessJson.parseToJsonElement(fitnessJson.encodeToString(backup)))
         OffsetDateTime.parse(backup.exportedAt)
         Rules.validate(backup.data, today)
@@ -44,7 +52,7 @@ object BackupCodec {
     private fun checkTypes(input: JsonElement, normalized: JsonElement) {
         when {
             input is JsonObject && normalized is JsonObject -> {
-                require(input.keys == normalized.keys) { "备份缺少字段，请使用完整的 v1 导出文件" }
+                require(input.keys == normalized.keys) { "备份缺少字段，请使用完整的导出文件" }
                 input.forEach { (key, value) -> checkTypes(value, requireNotNull(normalized[key])) }
             }
             input is JsonArray && normalized is JsonArray -> input.zip(normalized).forEach { (a, b) -> checkTypes(a, b) }
