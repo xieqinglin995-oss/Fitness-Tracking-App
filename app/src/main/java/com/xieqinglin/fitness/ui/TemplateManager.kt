@@ -51,7 +51,8 @@ import kotlinx.serialization.encodeToString
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = { applyId = null }, enabled = !busy) { Text("取消") }
                 Button(onClick = { vm.change("模板已应用", { applyId = null; onDismiss() }) {
-                    PlanOperations.apply(it, date, applying.exercises, applying.name, if (target == null) ConflictChoice.REPLACE else ConflictChoice.valueOf(choice))
+                    val next = PlanOperations.apply(it, date, applying.exercises, applying.name, if (target == null) ConflictChoice.REPLACE else ConflictChoice.valueOf(choice))
+                    next.copy(settings = next.settings.copy(sources = next.settings.sources.filterNot { s -> s.date == date } + PlanSource(date, applying.id)))
                 } }, enabled = !busy) { Text("确认应用") }
             }
         }

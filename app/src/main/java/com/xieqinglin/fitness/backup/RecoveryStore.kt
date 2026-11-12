@@ -6,20 +6,26 @@ import java.util.UUID
 
 data class RecoveryPoint(val name: String, val modified: Long)
 
-class RecoveryStore(private val directory: File) {
+class RecoveryStore(private val directory: File, private val nanoTime: () -> Long = System::nanoTime) {
+    private var lastSavedNanos: Long? = null
     fun points(): List<RecoveryPoint> = directory.listFiles().orEmpty()
         .filter { it.isFile && it.extension == "json" }.sortedByDescending { it.lastModified() }
         .map { RecoveryPoint(it.name, it.lastModified()) }
 
-    fun save(data: FitnessData, force: Boolean = false) {
+    @Synchronized fun save(data: FitnessData, force: Boolean = false) {
         if (data.weights.isEmpty() && data.plans.isEmpty() && data.templates.isEmpty()) return
-        if (!force && points().firstOrNull()?.let { System.currentTimeMillis() - it.modified < 60_000 } == true) return
+        if (!force) {
+            val monotonic = lastSavedNanos
+            if (monotonic != null && nanoTime() - monotonic in 0L until 60_000_000_000L) return
+            if (monotonic == null && points().firstOrNull()?.let { System.currentTimeMillis() - it.modified in 0L until 60_000L } == true) return
+        }
         directory.mkdirs()
         val target = File(directory, "${System.currentTimeMillis()}-${UUID.randomUUID()}.json")
         val temporary = File(directory, target.name + ".tmp")
         try {
             temporary.writeText(BackupCodec.encode(data), Charsets.UTF_8)
             check(temporary.renameTo(target)) { "无法保存恢复点" }
+            lastSavedNanos = nanoTime()
         } finally { temporary.delete() }
         points().drop(8).forEach { File(directory, it.name).delete() }
     }

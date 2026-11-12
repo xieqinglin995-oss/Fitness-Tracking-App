@@ -15,6 +15,7 @@ import android.graphics.drawable.Icon
 class FitnessApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        automaticBackup.start()
         val manager = getSystemService(ShortcutManager::class.java)
         if (manager.dynamicShortcuts.map { it.id }.toSet() != setOf("weight", "training")) {
             manager.dynamicShortcuts = listOf("weight" to "记录体重", "training" to "开始训练").map { (action, title) ->
@@ -24,9 +25,10 @@ class FitnessApplication : Application() {
         }
     }
     val database by lazy {
-        Room.databaseBuilder(this, FitnessDatabase::class.java, "fitness.db").build()
+        Room.databaseBuilder(this, FitnessDatabase::class.java, "fitness.db").addMigrations(FitnessDatabase.MIGRATION_1_2).build()
     }
     val repository by lazy { FitnessRepository(database) }
     val comfort by lazy { ComfortPreferences(this) }
     val recovery by lazy { RecoveryStore(File(noBackupFilesDir, "recovery")) }
+    val automaticBackup by lazy { com.xieqinglin.fitness.backup.AutomaticBackup(this, repository) }
 }

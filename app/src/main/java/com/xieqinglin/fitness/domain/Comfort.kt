@@ -9,7 +9,7 @@ fun FitnessData.weekOverview(today: LocalDate): WeekOverview {
     val start = weekStart(today).toString()
     val end = today.toString()
     return WeekOverview(weights.count { it.date in start..end },
-        executions.filter { it.date in start..end && it.status == ExecutionStatus.DONE }.map { it.date }.distinct().size,
+        executions.filter { it.date in start..end && it.hasConfirmedActivity() }.map { it.date }.distinct().size,
         executions.count { it.date in start..end && it.status == ExecutionStatus.DONE },
         plans.filter { it.date in start..end }.sumOf { it.exercises.size })
 }

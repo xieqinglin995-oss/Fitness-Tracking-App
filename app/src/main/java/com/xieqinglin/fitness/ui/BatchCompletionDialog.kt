@@ -18,6 +18,12 @@ import com.xieqinglin.fitness.presentation.FitnessViewModel
     val eligible = TrainingCompletion.eligible(data, date)
     var selected by rememberSaveable(date) { mutableStateOf((initialIds ?: eligible.map { it.id }.toSet()).toList()) }
     val valid = selected.toSet().intersect(eligible.map { it.id }.toSet())
+    val activity by vm.activityTimer.collectAsState()
+    val timerError = eligible.firstNotNullOfOrNull { item ->
+        if (item.id in valid && item.id == activity.exerciseId)
+            runCatching { vm.validateActivityTime(item, data.execution(item.id)?.actual ?: item.target) }.exceptionOrNull()?.message
+        else null
+    }
     FormDialog("批量完成", busy, onDismiss) {
         Text(date, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text("未记录的项目按计划值完成；进行中的项目保留已填写的实际值。已完成和已跳过的项目不会被改动。",
@@ -45,7 +51,8 @@ import com.xieqinglin.fitness.presentation.FitnessViewModel
             }
         }
         if (eligible.isEmpty()) Text("当天没有待完成的项目。")
-        Button(onClick = { vm.completeTraining(date, valid, onDismiss) }, enabled = !busy && valid.isNotEmpty(),
+        ErrorText(timerError?.let { "$it；也可以取消勾选该动作，先完成其他项目。" })
+        Button(onClick = { vm.completeTraining(date, valid, onDismiss) }, enabled = !busy && valid.isNotEmpty() && timerError == null,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("完成所选（${valid.size} 项）") }
         TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("取消") }
     }

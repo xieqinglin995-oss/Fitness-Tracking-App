@@ -16,7 +16,7 @@ class ComfortBackupTest {
             targetSnapshot = item.target, actual = item.target, status = status)))
 
     @Test fun v2CompletedWorkoutMigratesAllSetsAndV3KeepsPartialProgress() {
-        val legacy = BackupCodec.encode(data()).replace("\"schemaVersion\":3", "\"schemaVersion\":2").replace(",\"completedSets\":[0,1]", "")
+        val legacy = javaClass.getResource("/legacy-v2-strength.json")!!.readText()
         assertEquals(listOf(0, 1), BackupCodec.decode(legacy).data.executions.single().completedSets)
         val partial = data(ExecutionStatus.DRAFT).let { it.copy(executions = listOf(it.executions.single().copy(completedSets = listOf(0)))) }
         assertEquals(partial, BackupCodec.decode(BackupCodec.encode(partial)).data)
@@ -52,5 +52,18 @@ class ComfortBackupTest {
         val store = RecoveryStore(folder.newFolder())
         store.save(FitnessData())
         assertTrue(store.points().isEmpty())
+    }
+    @Test fun clockRollbackCreatesANewPointThenUsesMonotonicRateLimit() {
+        val directory = folder.newFolder()
+        var nanos = 1L
+        val store = RecoveryStore(directory) { nanos }
+        store.save(data())
+        assertTrue(java.io.File(directory, store.points().single().name).setLastModified(System.currentTimeMillis() + 86_400_000))
+        nanos += 61_000_000_000L
+        store.save(data())
+        assertEquals(2, store.points().size)
+        nanos += 1_000_000_000L
+        store.save(data())
+        assertEquals(2, store.points().size)
     }
 }

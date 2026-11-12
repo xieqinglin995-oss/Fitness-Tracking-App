@@ -47,7 +47,10 @@ jobs:
           api-level: 28
           arch: x86_64
           disable-animations: true
-          script: ./gradlew connectedDebugAndroidTest
+          script: |
+            ./gradlew installDebug installDebugAndroidTest
+            adb shell appwidget grantbind --package com.xieqinglin.fitness.debug --user 0
+            ./gradlew connectedDebugAndroidTest
       - uses: actions/upload-artifact@v4
         if: always()
         with:

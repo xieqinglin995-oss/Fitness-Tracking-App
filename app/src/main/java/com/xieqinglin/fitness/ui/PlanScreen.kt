@@ -83,6 +83,9 @@ import kotlinx.serialization.encodeToString
     var deleteId by rememberSaveable { mutableStateOf<String?>(null) }
     var restConfirm by rememberSaveable { mutableStateOf(false) }
     var templatesOpen by rememberSaveable { mutableStateOf(false) }
+    var repeatPlan by rememberSaveable { mutableStateOf(false) }
+    var updateBatch by rememberSaveable { mutableStateOf(false) }
+    var dateList by rememberSaveable { mutableStateOf(false) }
     var templateSave by rememberSaveable { mutableStateOf(false) }
     var rename by rememberSaveable { mutableStateOf(false) }
     var transfer by rememberSaveable { mutableStateOf<String?>(null) }
@@ -160,6 +163,8 @@ import kotlinx.serialization.encodeToString
                 enabled = !busy && TrainingCompletion.eligible(data, date).isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.DoneAll, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("批量完成")
             }
+            Row { TextButton(onClick = { repeatPlan = true }, enabled = !busy) { Text("周期排期") }; TextButton(onClick = { dateList = true }) { Text("大字日期列表") } }
+            if (!data.settings.sources.find { it.date == date }?.batchId.isNullOrBlank()) TextButton(onClick = { updateBatch = true }, enabled = !busy) { Text("预览更新本批未来目标") }
             if (plan?.exercises?.isNotEmpty() == true && date <= today.toString()) Button(onClick = { onStartSession(date) }, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Outlined.PlayArrow, null); Text("进入训练模式")
             }
@@ -202,6 +207,13 @@ import kotlinx.serialization.encodeToString
         }
     }
     if (templatesOpen) TemplateManager(data, date, vm, busy) { templatesOpen = false }
+    if (repeatPlan) RepeatPlanDialog(data, vm, busy) { repeatPlan = false }
+    if (updateBatch) UpdateBatchDialog(data, date, vm, busy) { updateBatch = false }
+    if (dateList) FormDialog("选择日期", busy, { dateList = false }) {
+        (-7L..7L).forEach { offset -> val day = selected.plusDays(offset)
+            OutlinedButton(onClick = { onDate(day.toString()); dateList = false }, modifier = Modifier.fillMaxWidth()) { Text("${displayDate(day)} · ${data.dayStatus(day.toString()).label}") }
+        }
+    }
     if (transfer != null && plan != null) TransferDialog(data, plan, transfer == "move", vm, busy) { transfer = null }
     if (copyWeek) CopyWeekDialog(data, monday, vm, busy) { copyWeek = false }
 }

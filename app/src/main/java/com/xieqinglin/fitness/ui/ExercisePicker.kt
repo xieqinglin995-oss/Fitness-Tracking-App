@@ -15,7 +15,8 @@ import com.xieqinglin.fitness.domain.*
 @Composable fun ExercisePicker(data: FitnessData, busy: Boolean, onDismiss: () -> Unit, onPick: (Exercise?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     val recent = data.recentExercises()
-    val source = (recent + ExercisePresets.all).distinctBy { it.name.trim().lowercase() to it.kind }
+    val source = remember(data, query) { ((if (query.isBlank()) recent else data.plans.sortedByDescending { it.date }.flatMap { it.exercises } + data.templates.flatMap { it.exercises }) + ExercisePresets.all)
+        .distinctBy { it.definitionId ?: (it.name.trim().lowercase() + it.kind) } }
     FormDialog("添加训练", busy, onDismiss) {
         OutlinedTextField(query, { query = it }, label = { Text("搜索动作或项目") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text("最近使用优先。选择后可调整组次、时长或距离。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

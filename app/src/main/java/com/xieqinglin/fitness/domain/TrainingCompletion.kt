@@ -20,7 +20,8 @@ object TrainingCompletion {
         val before = items.mapNotNull { data.execution(it.id) }
         val after = items.map { item ->
             data.execution(item.id)?.let { it.copy(status = ExecutionStatus.DONE, updatedAt = now(),
-                completedSets = if (it.kindSnapshot == ExerciseKind.STRENGTH) it.actual.sets.indices.toList() else emptyList()) }
+                completedSets = if (it.kindSnapshot == ExerciseKind.STRENGTH) it.actual.sets.indices.toList() else emptyList(),
+                completedSetIds = if (it.completedSetIds != null) it.actual.sets.map { set -> set.id } else null) }
                 ?: Execution(date = date, exerciseId = item.id, nameSnapshot = item.name,
                     kindSnapshot = item.kind, targetSnapshot = item.target, actual = item.target, status = ExecutionStatus.DONE)
         }
@@ -39,5 +40,6 @@ object TrainingCompletion {
 
 fun FitnessData.previousExecution(item: Exercise, beforeDate: String): Execution? = executions
     .filter { it.date < beforeDate && it.status == ExecutionStatus.DONE &&
-        it.kindSnapshot == item.kind && it.nameSnapshot.trim().equals(item.name.trim(), ignoreCase = true) }
+        it.kindSnapshot == item.kind && (if (item.definitionId != null) this.item(it.exerciseId)?.definitionId == item.definitionId
+            else it.nameSnapshot.trim().equals(item.name.trim(), ignoreCase = true)) }
     .maxWithOrNull(compareBy<Execution> { it.date }.thenBy { it.updatedAt })

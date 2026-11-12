@@ -22,8 +22,8 @@ class ReminderTest {
             while (manager.activeNotifications.none { it.id == 301 } && SystemClock.elapsedRealtime() < until) SystemClock.sleep(50)
             val notification = manager.activeNotifications.single { it.id == 301 }.notification
             assertNotNull(notification.contentIntent)
-            assertEquals("daily_records", notification.channelId)
-            assertNotNull(manager.getNotificationChannel("daily_records"))
+            assertEquals("daily_weight", notification.channelId)
+            assertNotNull(manager.getNotificationChannel("daily_weight"))
         } finally { manager.cancel(301) }
     }
 }

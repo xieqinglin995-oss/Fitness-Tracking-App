@@ -11,7 +11,7 @@ fun now(): String = OffsetDateTime.now().toString()
 @Serializable enum class WeightUnit(val label: String) { KG("kg"), JIN("斤") }
 @Serializable enum class ExerciseKind(val label: String) { STRENGTH("次数型"), DURATION("时长型"), DISTANCE("距离型") }
 @Serializable enum class ExecutionStatus { DRAFT, DONE, SKIPPED }
-@Serializable data class SetValue(val reps: Int, val loadGrams: Long? = null)
+@Serializable data class SetValue(val reps: Int, val loadGrams: Long? = null, val id: String = "")
 @Serializable data class Values(
     val sets: List<SetValue> = emptyList(),
     val seconds: Double? = null,
@@ -23,7 +23,7 @@ fun now(): String = OffsetDateTime.now().toString()
 )
 @Serializable data class Exercise(
     val id: String = newId(), val name: String, val kind: ExerciseKind,
-    val target: Values, val note: String = "", val temporary: Boolean = false,
+    val target: Values, val note: String = "", val temporary: Boolean = false, val definitionId: String? = null,
 )
 @Serializable data class DailyPlan(
     val id: String = newId(), val date: String, val name: String = "当日训练",
@@ -35,6 +35,7 @@ fun now(): String = OffsetDateTime.now().toString()
     val actual: Values, val status: ExecutionStatus, val skipReason: String = "",
     val updatedAt: String = now(),
     val completedSets: List<Int> = if (kindSnapshot == ExerciseKind.STRENGTH && status == ExecutionStatus.DONE) actual.sets.indices.toList() else emptyList(),
+    val completedSetIds: List<String>? = null, val note: String = "",
 )
 @Serializable data class WorkoutTemplate(
     val id: String = newId(), val name: String, val exercises: List<Exercise>,
@@ -44,15 +45,26 @@ fun now(): String = OffsetDateTime.now().toString()
     val goalGrams: Long? = null,
     // Old installations used one unit for both. Preserve that choice on upgrade.
     val loadUnit: WeightUnit = unit,
+    val library: List<ExerciseDefinition> = emptyList(),
+    val sessions: List<SessionRecord> = emptyList(),
+    val sources: List<PlanSource> = emptyList(),
 )
 @Serializable data class FitnessData(
     val weights: List<WeightEntry> = emptyList(), val plans: List<DailyPlan> = emptyList(),
     val executions: List<Execution> = emptyList(), val templates: List<WorkoutTemplate> = emptyList(),
     val settings: Settings = Settings(),
 ) {
-    fun plan(date: String): DailyPlan? = plans.find { it.date == date }
-    fun execution(id: String): Execution? = executions.find { it.exerciseId == id }
+    @kotlinx.serialization.Transient private val planIndex = plans.associateBy { it.date }
+    @kotlinx.serialization.Transient private val executionIndex = executions.associateBy { it.exerciseId }
+    @kotlinx.serialization.Transient private val itemIndex = plans.flatMap { it.exercises }.associateBy { it.id }
+    fun plan(date: String): DailyPlan? = planIndex[date]
+    fun execution(id: String): Execution? = executionIndex[id]
+    fun item(id: String): Exercise? = itemIndex[id]
 }
+
+@Serializable data class ExerciseDefinition(val id: String = newId(), val name: String, val kind: ExerciseKind, val cue: String = "")
+@Serializable data class SessionRecord(val date: String, val endedAt: String, val note: String = "")
+@Serializable data class PlanSource(val date: String, val templateId: String, val batchId: String = "")
 
 enum class DayStatus(val label: String) {
     EMPTY("未安排"), REST("休息日"), PENDING("待完成"), ACTIVE("进行中"), DONE("已完成"), ENDED("已结束")

@@ -1,6 +1,8 @@
 package com.xieqinglin.fitness.data.local
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.xieqinglin.fitness.backup.fitnessJson
 import com.xieqinglin.fitness.domain.*
 import kotlinx.serialization.encodeToString
@@ -23,6 +25,9 @@ data class TemplateRow(@PrimaryKey val id: String, val payload: String)
 @Entity(tableName = "settings")
 data class SettingsRow(@PrimaryKey val id: Int = 1, val payload: String)
 
+@Entity(tableName = "metadata", indices = [Index("category")])
+data class MetadataRow(@PrimaryKey val id: String, val category: String, val payload: String)
+
 @Dao
 abstract class FitnessDao {
     @Query("SELECT * FROM weights ORDER BY date") abstract suspend fun weights(): List<WeightRow>
@@ -31,6 +36,10 @@ abstract class FitnessDao {
     @Query("SELECT * FROM actuals") abstract suspend fun actuals(): List<ActualRow>
     @Query("SELECT * FROM templates") abstract suspend fun templates(): List<TemplateRow>
     @Query("SELECT * FROM settings WHERE id = 1") abstract suspend fun settings(): SettingsRow?
+    @Query("SELECT * FROM metadata") abstract suspend fun metadata(): List<MetadataRow>
+    @Upsert abstract suspend fun putMetadata(rows: List<MetadataRow>)
+    @Query("DELETE FROM metadata WHERE id IN (:ids)") abstract suspend fun deleteMetadata(ids: List<String>)
+    @Query("DELETE FROM metadata") abstract suspend fun clearMetadata()
     @Insert(onConflict = OnConflictStrategy.ABORT) abstract suspend fun putWeights(rows: List<WeightRow>)
     @Update abstract suspend fun updateWeights(rows: List<WeightRow>)
     @Insert(onConflict = OnConflictStrategy.ABORT) abstract suspend fun putPlans(rows: List<PlanRow>)
@@ -54,25 +63,29 @@ abstract class FitnessDao {
     @Transaction
     open suspend fun snapshot(): FitnessData {
         val byPlan = items().groupBy { it.planId }
+        val metadata = metadata().groupBy { it.category }
+        val base = settings()?.let { fitnessJson.decodeFromString<Settings>(it.payload) } ?: Settings()
         return FitnessData(
             weights().map { fitnessJson.decodeFromString(it.payload) },
             plans().map { p -> DailyPlan(p.id, p.date, p.name, p.rest, byPlan[p.id].orEmpty().map { fitnessJson.decodeFromString(it.payload) }) },
             actuals().map { fitnessJson.decodeFromString(it.payload) },
             templates().map { fitnessJson.decodeFromString(it.payload) },
-            settings()?.let { fitnessJson.decodeFromString(it.payload) } ?: Settings(),
+            base.copy(library = metadata["definition"]?.map { fitnessJson.decodeFromString(it.payload) } ?: base.library,
+                sessions = metadata["session"]?.map { fitnessJson.decodeFromString(it.payload) } ?: base.sessions,
+                sources = metadata["source"]?.map { fitnessJson.decodeFromString(it.payload) } ?: base.sources),
         )
     }
 
     suspend fun write(data: FitnessData, previous: FitnessData?) {
         // Diff by stable IDs. Do not use REPLACE: SQLite REPLACE deletes rows and can break historical links.
         if (previous == null) {
-            clearActuals(); clearItems(); clearPlans(); clearWeights(); clearTemplates()
+            clearActuals(); clearItems(); clearPlans(); clearWeights(); clearTemplates(); clearMetadata()
         } else {
-            deleteActuals(previous.executions.map { it.id } - data.executions.map { it.id }.toSet())
-            deleteItems(previous.plans.flatMap { it.exercises }.map { it.id } - data.plans.flatMap { it.exercises }.map { it.id }.toSet())
-            deletePlans(previous.plans.map { it.id } - data.plans.map { it.id }.toSet())
-            deleteWeights(previous.weights.map { it.id } - data.weights.map { it.id }.toSet())
-            deleteTemplates(previous.templates.map { it.id } - data.templates.map { it.id }.toSet())
+            (previous.executions.map { it.id } - data.executions.map { it.id }.toSet()).chunked(900).forEach { deleteActuals(it) }
+            (previous.plans.flatMap { it.exercises }.map { it.id } - data.plans.flatMap { it.exercises }.map { it.id }.toSet()).chunked(900).forEach { deleteItems(it) }
+            (previous.plans.map { it.id } - data.plans.map { it.id }.toSet()).chunked(900).forEach { deletePlans(it) }
+            (previous.weights.map { it.id } - data.weights.map { it.id }.toSet()).chunked(900).forEach { deleteWeights(it) }
+            (previous.templates.map { it.id } - data.templates.map { it.id }.toSet()).chunked(900).forEach { deleteTemplates(it) }
         }
         val oldWeights = previous?.weights.orEmpty().associateBy { it.id }
         val oldPlans = previous?.plans.orEmpty().associateBy { it.id }
@@ -90,9 +103,31 @@ abstract class FitnessDao {
         putActuals(actuals.filterNot { it.id in oldActuals })
         updateActuals(actuals.filter { it.id in oldActuals })
         putTemplates(data.templates.filter { oldTemplates[it.id] != it }.map { TemplateRow(it.id, fitnessJson.encodeToString(it)) })
-        if (previous?.settings != data.settings) putSettings(SettingsRow(payload = fitnessJson.encodeToString(data.settings)))
+        if (previous?.settings != data.settings) {
+        val currentMetadata = metadataRows(data.settings).associateBy { it.id }
+        val oldMetadata = previous?.let { metadataRows(it.settings).associateBy { row -> row.id } }.orEmpty()
+        oldMetadata.keys.filterNot { it in currentMetadata }.chunked(900).forEach { deleteMetadata(it) }
+        putMetadata(currentMetadata.values.filter { oldMetadata[it.id] != it })
+        val base = data.settings.copy(library = emptyList(), sessions = emptyList(), sources = emptyList())
+        putSettings(SettingsRow(payload = fitnessJson.encodeToString(base)))
+        }
     }
+
+    private fun metadataRows(settings: Settings): List<MetadataRow> =
+        settings.library.map { MetadataRow("definition:${it.id}", "definition", fitnessJson.encodeToString(it)) } +
+            settings.sessions.map { MetadataRow("session:${it.date}", "session", fitnessJson.encodeToString(it)) } +
+            settings.sources.map { MetadataRow("source:${it.date}", "source", fitnessJson.encodeToString(it)) }
 }
 
-@Database(entities = [WeightRow::class, PlanRow::class, ItemRow::class, ActualRow::class, TemplateRow::class, SettingsRow::class], version = 1, exportSchema = true)
-abstract class FitnessDatabase : RoomDatabase() { abstract fun dao(): FitnessDao }
+@Database(entities = [WeightRow::class, PlanRow::class, ItemRow::class, ActualRow::class, TemplateRow::class, SettingsRow::class, MetadataRow::class], version = 2, exportSchema = true)
+abstract class FitnessDatabase : RoomDatabase() {
+    abstract fun dao(): FitnessDao
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS metadata (id TEXT NOT NULL, category TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(id))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_metadata_category ON metadata (category)")
+            }
+        }
+    }
+}

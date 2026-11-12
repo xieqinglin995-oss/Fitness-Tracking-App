@@ -53,7 +53,8 @@ import java.time.LocalDate
     val keyboard = LocalSoftwareKeyboardController.current
     val prior = data.weights.filter { it.date <= date && it.id != original?.id }.maxByOrNull { it.date }
     val currentGrams = runCatching { WeightInput(number, unit, exactGrams).grams() }.getOrNull()
-    val dirty = number.isNotBlank() && (original == null || currentGrams != original.grams || date != original.date || note != original.note || unit != data.settings.unit)
+    val dirty = if (original == null) number.isNotBlank() || note.isNotBlank() || date != initialDate
+        else currentGrams != original.grams || date != original.date || note != original.note || unit != data.settings.unit
     fun use(input: WeightInput) { unitName = input.unit.name; number = input.text; exactGrams = input.exactGrams; selectionStart = 0; selectionEnd = number.length; error = null }
     FormDialog(if (original == null) "记录体重" else "编辑体重", busy, onDismiss, dirty = dirty) {
         LaunchedEffect(Unit) { focus.requestFocus(); keyboard?.show() }
@@ -104,29 +105,49 @@ import java.time.LocalDate
 @Serializable internal data class ValuesDraft(
     val reps: List<String> = listOf("10"), val loads: List<String> = listOf(""),
     val minutes: String = "", val km: String = "",
+    val ids: List<String> = emptyList(), val exactLoads: List<Long?> = emptyList(),
+    val exactSeconds: Double? = null,
 ) {
     fun parse(kind: ExerciseKind, unit: WeightUnit, actual: Boolean): Values {
         val value = when (kind) {
             ExerciseKind.STRENGTH -> Values(sets = reps.mapIndexed { i, text ->
-                val count = text.toIntOrNull()
-                require(count != null && Regex("[0-9]+").matches(text)) { "第 ${i + 1} 组次数须为整数" }
-                SetValue(count, loads[i].takeIf { it.isNotBlank() }?.let { Rules.weight(it, unit, true) })
+                val count = if (actual && text.isBlank()) 0 else text.toIntOrNull()
+                require(count != null && ((actual && text.isBlank()) || Regex("[0-9]+").matches(text))) { "第 ${i + 1} 组次数须为整数" }
+                val load = loads[i].takeIf { it.isNotBlank() }?.let { text ->
+                    exactLoads.getOrNull(i)?.takeIf { formatWeight(it, unit) == text } ?: Rules.weight(text, unit, true)
+                }
+                SetValue(count, load, rowIds()[i])
             })
-            ExerciseKind.DURATION -> Values(seconds = minutes.toDoubleOrNull()?.times(60))
+            ExerciseKind.DURATION -> Values(seconds = exactSeconds?.takeIf { durationInput(it) == minutes } ?: parseDuration(minutes))
             ExerciseKind.DISTANCE -> {
-                require(minutes.isBlank() || minutes.toDoubleOrNull() != null) { "请输入有效时长" }
-                Values(seconds = minutes.takeIf { it.isNotBlank() }?.toDoubleOrNull()?.times(60), kilometers = km.toDoubleOrNull())
+                require(minutes.isBlank() || parseDuration(minutes) != null) { "请输入有效时长" }
+                Values(seconds = minutes.takeIf { it.isNotBlank() }?.let { exactSeconds?.takeIf { durationInput(it) == minutes } ?: parseDuration(it) }, kilometers = km.toDoubleOrNull())
             }
         }
         Rules.values(kind, value, actual)
         return value
     }
+    fun rowIds() = reps.indices.map { ids.getOrNull(it) ?: "draft:$it" }
+    fun append(index: Int? = null) = copy(reps = reps + (index?.let { reps[it] } ?: ""),
+        loads = loads + (index?.let { loads[it] } ?: ""), ids = rowIds() + newId(),
+        exactLoads = reps.indices.map { exactLoads.getOrNull(it) } + index?.let { exactLoads.getOrNull(it) })
+    fun remove(index: Int) = copy(reps = reps.filterIndexed { i, _ -> i != index }, loads = loads.filterIndexed { i, _ -> i != index },
+        ids = rowIds().filterIndexed { i, _ -> i != index }, exactLoads = reps.indices.filter { it != index }.map { exactLoads.getOrNull(it) })
+    fun copyRow(from: Int, to: Int) = copy(reps = reps.mapIndexed { i, old -> if (i == to) reps[from] else old },
+        loads = loads.mapIndexed { i, old -> if (i == to) loads[from] else old },
+        exactLoads = reps.indices.map { if (it == to) exactLoads.getOrNull(from) else exactLoads.getOrNull(it) })
+    fun useSet(index: Int, set: SetValue, unit: WeightUnit) = copy(reps = reps.mapIndexed { i, old -> if (i == index) set.reps.toString() else old },
+        loads = loads.mapIndexed { i, old -> if (i == index) set.loadGrams?.let { formatWeight(it, unit) }.orEmpty() else old },
+        exactLoads = reps.indices.map { if (it == index) set.loadGrams else exactLoads.getOrNull(it) })
     companion object {
-        fun from(values: Values?, unit: WeightUnit) = ValuesDraft(
+        fun from(values: Values?, unit: WeightUnit, scope: String = "") = ValuesDraft(
             reps = values?.sets?.takeIf { it.isNotEmpty() }?.map { it.reps.toString() } ?: listOf("10"),
             loads = values?.sets?.takeIf { it.isNotEmpty() }?.map { it.loadGrams?.let { g -> formatWeight(g, unit) } ?: "" } ?: listOf(""),
-            minutes = values?.seconds?.let { formatNumber(it / 60) } ?: "",
+            minutes = values?.seconds?.let(::durationInput) ?: "",
             km = values?.kilometers?.let(::formatNumber) ?: "",
+            ids = values?.sets?.takeIf { it.isNotEmpty() }?.mapIndexed { i, set -> set.id.ifBlank { "legacy:$scope:$i" } } ?: listOf("legacy:$scope:0"),
+            exactLoads = values?.sets?.map { it.loadGrams }.orEmpty(),
+            exactSeconds = values?.seconds,
         )
     }
 }
@@ -146,22 +167,32 @@ import java.time.LocalDate
                     OutlinedTextField(draft.loads[index], { text -> onChange(draft.copy(loads = draft.loads.mapIndexed { i, s -> if (i == index) text else s })) },
                         enabled = enabled && completed?.contains(index) != true,
                         label = { Text("负重 · ${unit.label}") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.weight(1f))
-                    if (completed == null && draft.reps.size > 1) TextButton(onClick = { onChange(draft.copy(reps = draft.reps.filterIndexed { i, _ -> i != index }, loads = draft.loads.filterIndexed { i, _ -> i != index })) }, modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 56.dp)) { Text("删") }
+                    if (completed == null && draft.reps.size > 1) TextButton(onClick = { onChange(draft.remove(index)) }, modifier = Modifier.widthIn(min = 48.dp).heightIn(min = 56.dp)) { Text("删") }
                 }
             }
             if (completed == null) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { onChange(draft.copy(reps = draft.reps + draft.reps.first(), loads = draft.loads + draft.loads.first())) }, enabled = draft.reps.size < 100) { Text("＋ 添加一组") }
-                TextButton(onClick = { onChange(draft.copy(reps = List(draft.reps.size) { draft.reps.first() }, loads = List(draft.loads.size) { draft.loads.first() })) }) { Text("首组复制到全部") }
+                TextButton(onClick = { onChange(draft.append(0)) }, enabled = draft.reps.size < 100) { Text("＋ 添加一组") }
+                TextButton(onClick = { onChange(draft.reps.indices.fold(draft) { value, index -> value.copyRow(0, index) }) }) { Text("首组复制到全部") }
             }
         }
-        ExerciseKind.DURATION -> OutlinedTextField(draft.minutes, { onChange(draft.copy(minutes = it)) }, label = { Text("时长 · 分钟") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
+        ExerciseKind.DURATION -> DurationFields(draft.minutes) { onChange(draft.copy(minutes = it, exactSeconds = null)) }
         ExerciseKind.DISTANCE -> {
             OutlinedTextField(draft.km, { onChange(draft.copy(km = it)) }, label = { Text("距离 · km") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(draft.minutes, { onChange(draft.copy(minutes = it)) }, label = { Text("时长 · 分钟（可选）") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true, modifier = Modifier.fillMaxWidth())
+            DurationFields(draft.minutes, optional = true) { onChange(draft.copy(minutes = it, exactSeconds = null)) }
         }
+    }
+}
+
+@Composable internal fun DurationFields(value: String, optional: Boolean = false, onChange: (String) -> Unit) {
+    val parts = value.split(":")
+    val minutes = parts.first(); val seconds = parts.getOrNull(1).orEmpty()
+    Text(if (optional) "运动用时（可选）" else "运动用时", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(minutes, { onChange(if (seconds.isBlank()) it else "$it:$seconds") }, label = { Text("分钟") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.weight(1f))
+        OutlinedTextField(seconds, { onChange(if (it.isBlank()) minutes else "$minutes:$it") }, label = { Text("秒") }, singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done), modifier = Modifier.weight(1f))
     }
 }
 
@@ -175,7 +206,8 @@ import java.time.LocalDate
     val draft = fitnessJson.decodeFromString<ValuesDraft>(draftText)
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     FormDialog(if (original == null) "添加训练项目" else "编辑计划目标", busy, onDismiss,
-        dirty = name.isNotBlank() && (original == null || name != original.name || kind != original.kind || note != original.note || draft != ValuesDraft.from(original.target, unit))) {
+        dirty = if (original == null) name.isNotBlank() || note.isNotBlank() || draft != ValuesDraft.from(initial?.target, unit)
+            else name != original.name || kind != original.kind || note != original.note || draft != ValuesDraft.from(original.target, unit)) {
         OutlinedTextField(name, { name = it }, label = { Text("项目名称") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         if (name.isBlank()) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("深蹲", "拉伸", "跑步").forEach { suggestion -> SuggestionChip(onClick = {
@@ -193,7 +225,9 @@ import java.time.LocalDate
             TextButton(onClick = onDismiss, enabled = !busy) { Text("取消") }
             Button(onClick = {
                 try {
-                    val exercise = Exercise(original?.id ?: newId(), name.trim(), kind, draft.parse(kind, unit, false), note, original?.temporary ?: temporary)
+                    val definition = if (original != null && kind == original.kind) original.definitionId
+                        else initial?.definitionId?.takeIf { kind == initial.kind } ?: newId()
+                    val exercise = Exercise(original?.id ?: newId(), name.trim(), kind, draft.parse(kind, unit, false), note, original?.temporary ?: temporary, definition)
                     Rules.exercise(exercise)
                     onSave(exercise)
                 } catch (e: IllegalArgumentException) { error = e.message }
@@ -206,13 +240,16 @@ import java.time.LocalDate
     var draftText by rememberSaveable { mutableStateOf(fitnessJson.encodeToString(ValuesDraft.from(existing?.actual ?: item.target, unit))) }
     var statusName by rememberSaveable { mutableStateOf((existing?.status ?: ExecutionStatus.DRAFT).name) }
     var reason by rememberSaveable { mutableStateOf(existing?.skipReason ?: "") }
+    var executionNote by rememberSaveable { mutableStateOf(existing?.note ?: "") }
     var error by rememberSaveable { mutableStateOf<String?>(null) }
     var deleting by rememberSaveable { mutableStateOf(false) }
     val draft = fitnessJson.decodeFromString<ValuesDraft>(draftText)
     val status = ExecutionStatus.valueOf(statusName)
     val screen by vm.state.collectAsStateWithLifecycle()
+    val activityClock by vm.activityTimer.collectAsStateWithLifecycle()
     val previous = screen.data.previousExecution(item, date)
-    FormDialog("记录实际 · ${existing?.nameSnapshot ?: item.name}", busy, onDismiss) {
+    FormDialog("记录实际 · ${existing?.nameSnapshot ?: item.name}", busy, onDismiss,
+        dirty = draft != ValuesDraft.from(existing?.actual ?: item.target, unit) || status != (existing?.status ?: ExecutionStatus.DRAFT) || reason != existing?.skipReason.orEmpty() || executionNote != existing?.note.orEmpty()) {
         Text("训练归属日期：$date", style = MaterialTheme.typography.titleSmall)
         Text("计划目标：${item.target.description(item.kind, unit)}", style = MaterialTheme.typography.bodyMedium)
         if (existing != null && existing.targetSnapshot != item.target) Text("开始记录时目标：${existing.targetSnapshot.description(existing.kindSnapshot, unit)}")
@@ -228,6 +265,9 @@ import java.time.LocalDate
             }
         }
         if (status == ExecutionStatus.SKIPPED) OutlinedTextField(reason, { reason = it }, label = { Text("跳过原因（可选）") }, modifier = Modifier.fillMaxWidth())
+        if (status == ExecutionStatus.SKIPPED && activityClock.exerciseId == item.id)
+            Text("保存跳过状态会清除该动作尚未填入的计时。", style = MaterialTheme.typography.bodySmall)
+        OutlinedTextField(executionNote, { executionNote = it }, label = { Text("本次备注（可选）") }, modifier = Modifier.fillMaxWidth(), maxLines = 3)
         ErrorText(error)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             if (existing != null) TextButton(onClick = { deleting = true }, enabled = !busy) { Text("删除实际") }
@@ -237,7 +277,8 @@ import java.time.LocalDate
                     Rules.pastDate(date)
                     val value = draft.parse(item.kind, unit, true)
                     require(reason.length <= 500) { "跳过原因不能超过 500 字" }
-                    vm.action(onSuccess = onDismiss) { vm.repository.saveExecution(date, item, value, status, reason) }
+                    if (status == ExecutionStatus.DONE) vm.validateActivityTime(item, value)
+                    vm.action(onSuccess = { if (status != ExecutionStatus.DRAFT && vm.activityTimer.value.exerciseId == item.id) vm.clearActivity(); onDismiss() }) { vm.repository.saveExecution(date, item, value, status, reason, note = executionNote) }
                 } catch (e: IllegalArgumentException) { error = e.message }
             }, enabled = !busy) { Text("确认保存") }
         }

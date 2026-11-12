@@ -31,6 +31,8 @@ object Rules {
             ExerciseKind.STRENGTH -> {
                 require(value.sets.isNotEmpty() && value.sets.size <= 100) { "请输入 1–100 组数据" }
                 require(value.sets.all { (if (actual) it.reps >= 0 else it.reps > 0) && (it.loadGrams == null || it.loadGrams >= 0) }) { "次数须为${if (actual) "非负" else "正"}整数，负重不能小于 0" }
+                require(value.sets.map { it.id }.filter { it.isNotBlank() }.let { it.distinct().size == it.size }) { "训练组标识重复" }
+                require(value.sets.all { it.id.isBlank() } || value.sets.all { it.id.isNotBlank() }) { "训练组标识不完整" }
                 require(value.seconds == null && value.kilometers == null) { "次数型项目不能包含时长或距离字段" }
             }
             ExerciseKind.DURATION -> {
@@ -51,7 +53,7 @@ object Rules {
         values(item.kind, item.target)
     }
 
-    fun validate(data: FitnessData, today: LocalDate = LocalDate.now()) {
+    fun validate(data: FitnessData, today: LocalDate = LocalDate.now(), allowFutureHistory: Boolean = false) {
         fun unique(ids: List<String>, name: String) {
             require(ids.all { it.isNotBlank() } && ids.distinct().size == ids.size) { "$name 存在重复或空标识" }
         }
@@ -59,7 +61,7 @@ object Rules {
         unique(data.weights.map { it.id }, "体重")
         unique(data.weights.map { it.date }, "体重日期")
         data.weights.forEach {
-            pastDate(it.date, today)
+            if (allowFutureHistory) date(it.date) else pastDate(it.date, today)
             require(it.grams > 0 && it.note.length <= 500) { "体重或备注不合法" }
             timestamp(it.createdAt); timestamp(it.updatedAt)
         }
@@ -77,7 +79,7 @@ object Rules {
         unique(data.executions.map { it.exerciseId }, "实际记录关联项目")
         val itemMap = data.plans.flatMap { p -> p.exercises.map { it.id to (p.date to it) } }.toMap()
         data.executions.forEach {
-            pastDate(it.date, today)
+            if (allowFutureHistory) date(it.date) else pastDate(it.date, today)
             val parent = itemMap[it.exerciseId]
             require(parent != null && parent.first == it.date) { "实际记录缺少同日期的关联项目" }
             require(it.nameSnapshot.isNotBlank() && it.nameSnapshot.length <= 100 && it.skipReason.length <= 500) { "实际记录名称或跳过原因不合法" }
@@ -88,6 +90,10 @@ object Rules {
             require(it.kindSnapshot == ExerciseKind.STRENGTH || it.completedSets.isEmpty()) { "该项目不包含组次" }
             require(it.status != ExecutionStatus.DONE || it.kindSnapshot != ExerciseKind.STRENGTH || it.completedSets.toSet() == it.actual.sets.indices.toSet()) { "已完成项目须包含全部训练组" }
             require(it.status != ExecutionStatus.SKIPPED || it.completedSets.isEmpty()) { "跳过项目不能包含已完成组" }
+            require(it.note.length <= 500) { "备注不能超过 500 字" }
+            it.completedSetIds?.let { ids ->
+                require(ids == it.completedSets.map { index -> it.actual.sets[index].id } && ids.all(String::isNotBlank)) { "确认组标识与实际不一致" }
+            }
             timestamp(it.updatedAt)
         }
         unique(data.templates.map { it.id }, "模板")
@@ -97,6 +103,12 @@ object Rules {
             it.exercises.forEach { e -> exercise(e); require(!e.temporary) { "模板不能含临时状态" } }
         }
         require(data.settings.goalGrams == null || data.settings.goalGrams > 0) { "目标体重必须大于 0" }
+        unique(data.settings.library.map { it.id }, "动作库")
+        data.settings.library.forEach { require(it.name.isNotBlank() && it.name.length <= 100 && it.cue.length <= 500) { "动作提示不合法" } }
+        unique(data.settings.sessions.map { it.date }, "训练总结日期")
+        data.settings.sessions.forEach { date(it.date); timestamp(it.endedAt); require(it.note.length <= 500) { "训练备注过长" } }
+        unique(data.settings.sources.map { it.date }, "模板来源日期")
+        data.settings.sources.forEach { date(it.date); require(it.templateId.isNotBlank()) { "模板来源不合法" } }
     }
 }
 
@@ -112,13 +124,13 @@ fun formatNumber(number: Double): String = BigDecimal.valueOf(number).setScale(2
 
 fun Values.description(kind: ExerciseKind, unit: WeightUnit): String = when (kind) {
     ExerciseKind.STRENGTH -> sets.mapIndexed { index, set -> "${index + 1}组 ${set.reps}次" + (set.loadGrams?.let { " × ${formatWeight(it, unit)} ${unit.label}" } ?: "") }.joinToString(" / ")
-    ExerciseKind.DURATION -> "${formatNumber((seconds ?: 0.0) / 60)} 分钟"
-    ExerciseKind.DISTANCE -> "${formatNumber(kilometers ?: 0.0)} km" + (seconds?.let { " · ${formatNumber(it / 60)} 分钟" } ?: "")
+    ExerciseKind.DURATION -> durationLabel(seconds ?: 0.0)
+    ExerciseKind.DISTANCE -> "${formatNumber(kilometers ?: 0.0)} km" + (seconds?.let { " · ${durationLabel(it)}" } ?: "")
 }
 
 fun Values.summary(kind: ExerciseKind, unit: WeightUnit): String = when {
     kind != ExerciseKind.STRENGTH -> description(kind, unit)
-    sets.distinct().size == 1 -> "${sets.size} 组 × ${sets.first().reps} 次" +
+    sets.map { it.reps to it.loadGrams }.distinct().size == 1 -> "${sets.size} 组 × ${sets.first().reps} 次" +
         (sets.first().loadGrams?.let { " · ${formatWeight(it, unit)} ${unit.label}" } ?: "")
     else -> "${sets.size} 组 · ${sets.joinToString(" / ") { it.reps.toString() }} 次"
 }

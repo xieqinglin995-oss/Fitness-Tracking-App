@@ -10,8 +10,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.platform.LocalDensity
 import com.xieqinglin.fitness.domain.*
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -19,10 +21,18 @@ import java.util.Locale
 
 fun displayDate(date: LocalDate): String = date.format(DateTimeFormatter.ofPattern("M月d日 EEEE", Locale.SIMPLIFIED_CHINESE))
 
-@Composable fun SectionCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+@Composable internal fun AdaptiveInputPair(first: @Composable (Modifier) -> Unit, second: @Composable (Modifier) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 270.dp || LocalDensity.current.fontScale > 1.3f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            first(Modifier.fillMaxWidth()); second(Modifier.fillMaxWidth())
+        } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { first(Modifier.weight(1f)); second(Modifier.weight(1f)) }
+    }
+}
+
+@Composable fun SectionCard(modifier: Modifier = Modifier, spacing: Dp = 10.dp, content: @Composable ColumnScope.() -> Unit) {
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
         shape = MaterialTheme.shapes.large, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(spacing), content = content)
     }
 }
 

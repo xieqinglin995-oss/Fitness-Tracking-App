@@ -16,7 +16,8 @@ import java.time.OffsetDateTime
 
 val fitnessJson = Json { encodeDefaults = true; prettyPrint = false; isLenient = false }
 
-@Serializable data class RecordCounts(val weights: Int, val plans: Int, val executions: Int, val templates: Int)
+@Serializable data class RecordCounts(val weights: Int, val plans: Int, val executions: Int, val templates: Int,
+    val definitions: Int = 0, val sessions: Int = 0, val sources: Int = 0)
 @Serializable data class Backup(
     val schemaVersion: Int,
     val exportedAt: String,
@@ -26,14 +27,15 @@ val fitnessJson = Json { encodeDefaults = true; prettyPrint = false; isLenient =
 
 object BackupCodec {
     const val MAX_BYTES = 32 * 1024 * 1024
-    fun counts(data: FitnessData) = RecordCounts(data.weights.size, data.plans.size, data.executions.size, data.templates.size)
-    fun encode(data: FitnessData): String = fitnessJson.encodeToString(Backup(3, now(), counts(data), data))
+    fun counts(data: FitnessData) = RecordCounts(data.weights.size, data.plans.size, data.executions.size, data.templates.size,
+        data.settings.library.size, data.settings.sessions.size, data.settings.sources.size)
+    fun encode(data: FitnessData): String = fitnessJson.encodeToString(Backup(4, now(), counts(data), data))
 
-    fun decode(text: String, today: LocalDate = LocalDate.now()): Backup {
+    fun decode(text: String, today: LocalDate = LocalDate.now(), allowFutureHistory: Boolean = false): Backup {
         require(text.toByteArray(Charsets.UTF_8).size <= MAX_BYTES) { "备份文件不能超过 32 MB" }
         var root = fitnessJson.parseToJsonElement(text).jsonObject
         val version = root["schemaVersion"]?.jsonPrimitive?.intOrNull
-        require(version in 1..3) { "备份版本不兼容，支持 schemaVersion 1 至 3" }
+        require(version in 1..4) { "备份版本不兼容，支持 schemaVersion 1 至 4" }
         if (version == 1) {
             val data = requireNotNull(root["data"]).jsonObject
             val settings = requireNotNull(data["settings"]).jsonObject
@@ -41,7 +43,7 @@ object BackupCodec {
             root = JsonObject(root + ("data" to JsonObject(data + ("settings" to JsonObject(settings +
                 ("loadUnit" to requireNotNull(settings["unit"]) { "备份缺少单位" }))))))
         }
-        if (version != 3) {
+        if (version in 1..2) {
             val data = requireNotNull(root["data"]).jsonObject
             val executions = requireNotNull(data["executions"]) as JsonArray
             val migrated = executions.map { element ->
@@ -55,11 +57,29 @@ object BackupCodec {
             root = JsonObject(root + ("data" to JsonObject(data + ("executions" to JsonArray(migrated)))))
         }
         val backup = fitnessJson.decodeFromJsonElement(Backup.serializer(), root)
-        checkTypes(root, fitnessJson.parseToJsonElement(fitnessJson.encodeToString(backup)))
+        val normalized = fitnessJson.parseToJsonElement(fitnessJson.encodeToString(backup))
+        checkTypes(root, if (version != 4) legacyShape(normalized) else normalized)
         OffsetDateTime.parse(backup.exportedAt)
-        Rules.validate(backup.data, today)
+        Rules.validate(backup.data, today, allowFutureHistory)
         require(backup.counts == counts(backup.data)) { "备份记录数量校验失败" }
         return backup
+    }
+
+    // Only fields introduced in v4 may be defaulted for older files. All original keys remain mandatory.
+    private fun legacyShape(element: JsonElement): JsonElement = when (element) {
+        is JsonArray -> JsonArray(element.map(::legacyShape))
+        is JsonObject -> {
+            val removed = when {
+                "reps" in element && "loadGrams" in element -> setOf("id")
+                "target" in element && "temporary" in element -> setOf("definitionId")
+                "actual" in element -> setOf("completedSetIds", "note")
+                "unit" in element && "loadUnit" in element -> setOf("library", "sessions", "sources")
+                "weights" in element && "executions" in element && element["weights"] is JsonPrimitive -> setOf("definitions", "sessions", "sources")
+                else -> emptySet()
+            }
+            JsonObject(element.filterKeys { it !in removed }.mapValues { legacyShape(it.value) })
+        }
+        else -> element
     }
 
     private fun checkTypes(input: JsonElement, normalized: JsonElement) {

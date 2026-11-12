@@ -28,6 +28,7 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
     val repository = (application as FitnessApplication).repository
     private val app = application as FitnessApplication
     val comfort = app.comfort.state
+    val automaticBackup = app.automaticBackup.state
     private val _state = MutableStateFlow(ScreenState())
     val state = _state.asStateFlow()
     private val _busy = MutableStateFlow(false)
@@ -48,6 +49,11 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
             if (it.running && it.deadline <= SystemClock.elapsedRealtime()) RestClock() else it
         } else RestClock())
     val timer = timerState.asStateFlow()
+    private val activityState = MutableStateFlow(ActivityClock(preferences.getString("activity_item", "").orEmpty(),
+        preferences.getLong("activity_accrued", 0), if (preferences.getInt("activity_boot", -1) == boot) preferences.getLong("activity_started", 0) else 0,
+        preferences.getLong("activity_target", 0)))
+    val activityTimer = activityState.asStateFlow()
+    val activityInterrupted = preferences.getString("activity_item", "").orEmpty().isNotBlank() && preferences.getInt("activity_boot", -1) != boot
     private val mutex = Mutex()
     private var observing: Job? = null
 
@@ -57,7 +63,10 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
         observing?.cancel()
         observing = viewModelScope.launch {
             repository.data.catch { _state.value = ScreenState(error = "读取本地数据失败：${it.message}") }
-                .collect { _state.value = ScreenState(it, loaded = true) }
+                .collect { data ->
+                    _state.value = ScreenState(data, loaded = true)
+                    withContext(Dispatchers.IO) { runCatching { com.xieqinglin.fitness.platform.FitnessWidget.refresh(app, data) } }
+                }
         }
     }
 
@@ -89,7 +98,16 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
 
     fun completeTraining(date: String, ids: Set<String>, onSuccess: () -> Unit = {}) {
         var token: CompletionUndo? = null
-        action("所选训练已完成", onSuccess, undo = { token }) { token = repository.completeTraining(date, ids) }
+        action("所选训练已完成", onSuccess = {
+            if (activityState.value.exerciseId in ids) clearActivity()
+            onSuccess()
+        }, undo = { token }) {
+            val current = repository.snapshot()
+            TrainingCompletion.eligible(current, date).filter { it.id in ids }.forEach { item ->
+                validateActivityTime(item, current.execution(item.id)?.actual ?: item.target)
+            }
+            token = repository.completeTraining(date, ids)
+        }
     }
 
     fun undoCompletion(token: CompletionUndo) = action("已撤销本次完成") { repository.undoCompletion(token) }
@@ -98,6 +116,7 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
     fun setComfort(transform: (ComfortOptions) -> ComfortOptions) {
         app.comfort.update(transform)
         Reminders.schedule(app)
+        viewModelScope.launch(Dispatchers.IO) { runCatching { com.xieqinglin.fitness.platform.FitnessWidget.refresh(app) } }
     }
 
     private fun setTimer(next: RestClock) {
@@ -111,11 +130,40 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
     fun cancelRest() = setTimer(RestClock())
     fun finishRest() { setTimer(RestClock()); viewModelScope.launch { notices.send(Notice("休息结束，按自己的节奏继续")) } }
 
-    fun saveSession(date: String, item: Exercise, actual: Values, completed: List<Int>, finish: Boolean = false, onSuccess: () -> Unit = {}) {
+    fun saveSession(date: String, item: Exercise, actual: Values, completed: List<Int>, finish: Boolean = false, note: String? = null, onSuccess: () -> Unit = {}) {
         val done = finish || (item.kind == ExerciseKind.STRENGTH && completed.size == actual.sets.size)
-        action(if (done) "动作已完成" else "进度已保存", onSuccess = { if (done) cancelRest(); onSuccess() }, notify = false) {
-            repository.saveExecution(date, item, actual, if (done) ExecutionStatus.DONE else ExecutionStatus.DRAFT, "", completed)
+        if (done) validateActivityTime(item, actual)
+        action(if (done) "动作已完成" else "进度已保存", onSuccess = { if (done) { cancelRest(); if (activityState.value.exerciseId == item.id) clearActivity() }; onSuccess() }, notify = false) {
+            repository.saveExecution(date, item, actual, if (done) ExecutionStatus.DONE else ExecutionStatus.DRAFT, "", completed, note)
         }
+    }
+
+    fun validateActivityTime(item: Exercise, actual: Values) {
+        val clock = activityState.value
+        if (item.kind != ExerciseKind.STRENGTH && clock.exerciseId == item.id) require(!clock.running &&
+            actual.seconds == clock.elapsed(SystemClock.elapsedRealtime()).div(1000).toDouble()) {
+            "请先暂停并填入计时用时，或清除计时后手动记录"
+        }
+    }
+
+    private fun activityClock(next: ActivityClock) {
+        activityState.value = next
+        preferences.edit().putInt("activity_boot", boot).putString("activity_item", next.exerciseId)
+            .putLong("activity_accrued", next.accrued).putLong("activity_started", next.started).putLong("activity_target", next.target).apply()
+    }
+    fun startActivity(itemId: String, seconds: Double? = null) { cancelRest(); activityClock(ActivityClock(itemId, started = SystemClock.elapsedRealtime(), target = ((seconds ?: 0.0) * 1000).toLong())) }
+    fun pauseActivity() = activityClock(activityState.value.pause(SystemClock.elapsedRealtime()))
+    fun resumeActivity() = activityClock(activityState.value.resume(SystemClock.elapsedRealtime()))
+    fun clearActivity() = activityClock(ActivityClock())
+
+    fun chooseAutomaticBackup(uri: Uri) = action("自动备份已开启", protect = false) { app.automaticBackup.choose(uri) }
+    fun disableAutomaticBackup() = action("自动备份已关闭，已有文件保留", protect = false) { app.automaticBackup.disable() }
+    fun backupNow() = action("自动备份已写入并校验", protect = false) { app.automaticBackup.save(repository.snapshot()) }
+    fun skipReminder(type: String) { Reminders.skipToday(app, type); inform("今天不再提醒") }
+    fun snoozeReminder(type: String) { if (Reminders.snooze(app, type)) inform("已安排稍后提醒，时间受系统调度影响") else inform("请检查提醒权限、时间和星期设置") }
+
+    fun endSession(date: String, note: String, onSuccess: () -> Unit) = change("本次记录已保留", onSuccess) { data ->
+        data.copy(settings = data.settings.copy(sessions = data.settings.sessions.filterNot { it.date == date } + SessionRecord(date, now(), note)))
     }
 
     fun exportCsv(uri: Uri, training: Boolean) = action("表格已保存到所选位置", protect = false) {
@@ -125,7 +173,7 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
 
     fun inspectRecovery(name: String) = action("恢复点校验通过，请核对范围", protect = false) {
         val text = withContext(Dispatchers.IO) { app.recovery.read(name) }
-        val backup = withContext(Dispatchers.Default) { BackupCodec.decode(text) }
+        val backup = withContext(Dispatchers.Default) { BackupCodec.decode(text, allowFutureHistory = true) }
         importText = text; _preview.value = backup
     }
 
@@ -157,7 +205,7 @@ class FitnessViewModel(application: Application) : AndroidViewModel(application)
                 output.toString("UTF-8")
             }
         }
-        val backup = withContext(Dispatchers.Default) { BackupCodec.decode(text) }
+        val backup = withContext(Dispatchers.Default) { BackupCodec.decode(text, allowFutureHistory = true) }
         importText = text
         _preview.value = backup
     }

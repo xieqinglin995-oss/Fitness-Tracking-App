@@ -12,6 +12,11 @@ data class WeightStats(val entries: List<WeightEntry>) {
 }
 
 object Statistics {
+    data class Comparison(val recent: WeightStats, val previous: WeightStats) {
+        val delta = if (recent.entries.size >= 3 && previous.entries.size >= 3) recent.mean!! - previous.mean!! else null
+    }
+    fun comparison(entries: List<WeightEntry>, today: LocalDate): Comparison = Comparison(
+        stats(entries, today.minusDays(6), today), stats(entries, today.minusDays(13), today.minusDays(7)))
     // Compute against all history before filtering, so range changes cannot change a trend value.
     fun points(entries: List<WeightEntry>, from: LocalDate? = null, to: LocalDate = LocalDate.now()): List<TrendPoint> {
         val sorted = entries.sortedBy { it.date }

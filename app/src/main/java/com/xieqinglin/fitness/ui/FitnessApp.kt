@@ -30,6 +30,15 @@ import com.xieqinglin.fitness.domain.*
 import com.xieqinglin.fitness.presentation.FitnessViewModel
 import kotlinx.coroutines.delay
 import java.time.LocalDate
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun FitnessApp(vm: FitnessViewModel) {
@@ -55,7 +64,16 @@ import java.time.LocalDate
             withDismissAction = notice.undo != null, duration = if (notice.undo != null) SnackbarDuration.Long else SnackbarDuration.Short)
         if (result == SnackbarResult.ActionPerformed) notice.undo?.let(vm::undoCompletion)
     } }
-    LaunchedEffect(Unit) { while (true) { today = LocalDate.now(); delay(15_000) } }
+    val context = LocalContext.current
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(context, owner) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) { today = LocalDate.now(); com.xieqinglin.fitness.platform.Reminders.schedule(context) } }
+        val receiver = object : BroadcastReceiver() { override fun onReceive(context: Context, intent: Intent) { today = LocalDate.now() } }
+        owner.lifecycle.addObserver(observer)
+        val filter = IntentFilter().apply { addAction(Intent.ACTION_DATE_CHANGED); addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_TIMEZONE_CHANGED) }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { owner.lifecycle.removeObserver(observer); context.unregisterReceiver(receiver) }
+    }
     BackHandler(tab != 0 && !busy) { tab = if (tab == 3) previousTab else 0 }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { it?.let(vm::export) }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::inspect) }
@@ -94,7 +112,7 @@ import java.time.LocalDate
                 tab == 0 -> TodayScreen(data, today, { openWeight(data.weights.find { it.date == today.toString() }) }, { tab = 2 }, { selectedDate = today.toString(); tab = 1 }, vm, busy,
                     onExecute = { date, id -> executionDate = date; executionId = id }, onStartSession = { sessionDate = it })
                 tab == 1 -> PlanScreen(data, selectedDate, { selectedDate = it }, today, vm, busy, onStartSession = { sessionDate = it })
-                tab == 2 -> TrendsScreen(data, today, { openWeight(it, it?.date ?: today.toString()) }, { selectedDate = it; tab = 1 })
+                tab == 2 -> TrendsScreen(data, today, { openWeight(it, it?.date ?: today.toString()) }, { selectedDate = it; tab = 1 }, vm)
                 tab == 3 -> SettingsScreen(data, vm, busy, { export.launch("fitness-$today.json") }, { import.launch(arrayOf("application/json", "text/*", "application/octet-stream")) },
                     onCsv = { training -> csvTraining = training; csv.launch(if (training) "training-$today.csv" else "weight-$today.csv") })
             } }
@@ -106,7 +124,9 @@ import java.time.LocalDate
     if (executionItem != null) ExecutionForm(executionDate!!, executionItem, data.execution(executionItem.id), vm, data.settings.loadUnit, busy) { executionId = null; executionDate = null }
     preview?.let { backup ->
         val c = backup.counts
-        ConfirmDialog("完整替换本机数据？", "备份时间：${backup.exportedAt}\n将导入：${c.weights} 条体重、${c.plans} 日计划、${c.executions} 条实际、${c.templates} 个模板及设置。\n\n本机现有 ${data.weights.size} 条体重、${data.plans.size} 日计划、${data.executions.size} 条实际、${data.templates.size} 个模板及设置将被完整替换。\n\n继续后请先选择原数据备份的保存位置；备份成功后才会恢复。取消文件选择不会修改数据。", "备份原数据并恢复", busy,
+        val future = backup.data.weights.count { it.date > today.toString() } + backup.data.executions.count { it.date > today.toString() }
+        val warning = "\n另含 ${c.definitions} 个动作定义、${c.sessions} 次总结、${c.sources} 个排期来源。\n" + if (future > 0) "\n有 $future 条记录归属日期晚于设备今天，请核对系统日期；恢复会保留原日期。\n" else ""
+        ConfirmDialog("完整替换本机数据？", "备份时间：${backup.exportedAt}\n将导入：${c.weights} 条体重、${c.plans} 日计划、${c.executions} 条实际、${c.templates} 个模板及设置。$warning\n\n本机现有 ${data.weights.size} 条体重、${data.plans.size} 日计划、${data.executions.size} 条实际、${data.templates.size} 个模板及设置将被完整替换。\n\n继续后请先选择原数据备份的保存位置；备份成功后才会恢复。取消文件选择不会修改数据。", "备份原数据并恢复", busy,
             vm::cancelImport, { safety.launch("fitness-before-restore-$today.json") })
     }
 }
@@ -125,6 +145,8 @@ import java.time.LocalDate
     var pickerOpen by rememberSaveable { mutableStateOf(false) }
     var seedText by rememberSaveable { mutableStateOf<String?>(null) }
     var repeatOpen by rememberSaveable { mutableStateOf(false) }
+    var weightExpanded by rememberSaveable(date) { mutableStateOf(false) }
+    var summaryOpen by rememberSaveable(date) { mutableStateOf(false) }
     val recentPlan = data.plans.filter { it.date < date && it.exercises.isNotEmpty() }.maxByOrNull { it.date }
     val overview = remember(data, today) { data.weekOverview(today) }
     val timer by vm.timer.collectAsStateWithLifecycle()
@@ -134,6 +156,8 @@ import java.time.LocalDate
             TextButton(onClick = onTrend) { Text("本周训练 ${overview.trainedDays} 天") }
         } }
         item {
+            if (weight != null && !weightExpanded) RecordedWeight(weight, unit, busy, onWeight) { weightExpanded = true }
+            else {
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF18243E), contentColor = Color.White), modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -156,7 +180,9 @@ import java.time.LocalDate
                         Icon(if (weight == null) Icons.Outlined.Add else Icons.Outlined.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp))
                         Text(if (weight == null) "记录今日体重" else "编辑今日体重")
                     }
+                    if (weight != null) TextButton(onClick = { weightExpanded = false }) { Text("收起体重详情", color = Color.White) }
                 }
+            }
             }
         }
         item { SectionCard {
@@ -169,12 +195,26 @@ import java.time.LocalDate
                 TextButton(onClick = onPlan) { Text("管理计划") }
             }
             if (plan?.exercises?.isNotEmpty() == true) {
+                val next = plan.exercises.firstOrNull { data.execution(it.id)?.status !in listOf(ExecutionStatus.DONE, ExecutionStatus.SKIPPED) }
+                if (next != null && data.execution(next.id) != null) Text("接着做 ${next.name} · 已确认 ${data.execution(next.id)?.completedSets?.size ?: 0} 组", style = MaterialTheme.typography.bodySmall)
                 LinearProgressIndicator(progress = { done.toFloat() / plan.exercises.size }, modifier = Modifier.fillMaxWidth().height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onStartSession(date) }, enabled = !busy, modifier = Modifier.weight(1f)) { Text(if (pending == 0) "回看训练" else if (done > 0 || data.dayStatus(date) == DayStatus.ACTIVE) "继续训练" else "开始训练") }
-                    OutlinedButton(onClick = { batchOpen = true }, enabled = !busy && pending > 0) { Text("批量完成") }
-                    IconButton(onClick = { pickerOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, "临时新增训练") }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val start: @Composable (Modifier) -> Unit = { modifier ->
+                        Button(onClick = { onStartSession(date) }, enabled = !busy, modifier = modifier) { Text(if (pending == 0) "回看训练" else if (done > 0 || data.dayStatus(date) == DayStatus.ACTIVE) "继续训练" else "开始训练") }
+                    }
+                    if (maxWidth < 270.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            start(Modifier.fillMaxWidth())
+                            OutlinedButton(onClick = { batchOpen = true }, enabled = !busy && pending > 0, modifier = Modifier.fillMaxWidth()) { Text("批量完成") }
+                            TextButton(onClick = { pickerOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, null); Text("临时新增训练") }
+                        }
+                    } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        start(Modifier.weight(1f))
+                        OutlinedButton(onClick = { batchOpen = true }, enabled = !busy && pending > 0) { Text("批量完成") }
+                        IconButton(onClick = { pickerOpen = true }, enabled = !busy) { Icon(Icons.Outlined.Add, "临时新增训练") }
+                    }
                 }
+                TextButton(onClick = { summaryOpen = true }, enabled = !busy) { Text("本次总结 / 保留部分结束") }
             } else if (plan?.rest != true) {
                 Text("添加今天的项目，或从计划页应用模板。", style = MaterialTheme.typography.bodyMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -198,11 +238,31 @@ import java.time.LocalDate
         } }
     }
     if (batchOpen) BatchCompletionDialog(data, date, vm, busy, onDismiss = { batchOpen = false })
+    if (summaryOpen) SessionSummary(data, date, vm, busy, { summaryOpen = false }, { summaryOpen = false })
     if (repeatOpen && recentPlan != null) ConfirmDialog("复用最近一次训练？", "将 ${recentPlan.date} 的 ${recentPlan.exercises.size} 个项目安排到今天，只复制目标，不复制完成状态。", "使用这个计划", busy, { repeatOpen = false }) {
         vm.change("训练已安排", { repeatOpen = false }) { PlanOperations.apply(it, date, recentPlan.exercises, recentPlan.name, ConflictChoice.APPEND) }
     }
     if (pickerOpen) ExercisePicker(data, busy, { pickerOpen = false }) { seed -> seedText = seed?.let { fitnessJson.encodeToString(it) }; pickerOpen = false; temporaryOpen = true }
     if (temporaryOpen) ExerciseForm(null, data.settings.loadUnit, busy, temporary = true, onDismiss = { temporaryOpen = false }, seed = seedText?.let { fitnessJson.decodeFromString<Exercise>(it) }) { exercise ->
         vm.action(onSuccess = { temporaryOpen = false }) { vm.repository.saveExercise(date, exercise) }
+    }
+}
+
+@Composable private fun RecordedWeight(weight: WeightEntry, unit: WeightUnit, busy: Boolean, onEdit: () -> Unit, onExpand: () -> Unit) {
+    SectionCard {
+        Text("今日体重 · 已记录", style = MaterialTheme.typography.labelLarge)
+        BoxWithConstraints {
+            val numbers: @Composable () -> Unit = { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(formatWeight(weight.grams, unit), style = MaterialTheme.typography.titleLarge); Text(unit.label, style = MaterialTheme.typography.titleLarge)
+            } }
+            if (maxWidth < 300.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) Column {
+                numbers()
+                Row { TextButton(onClick = onEdit, enabled = !busy) { Text("编辑今日体重") }; IconButton(onClick = onExpand) { Icon(Icons.Outlined.ExpandMore, "展开体重详情") } }
+            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { numbers() }
+                TextButton(onClick = onEdit, enabled = !busy) { Text("编辑今日体重") }
+                IconButton(onClick = onExpand) { Icon(Icons.Outlined.ExpandMore, "展开体重详情") }
+            }
+        }
     }
 }

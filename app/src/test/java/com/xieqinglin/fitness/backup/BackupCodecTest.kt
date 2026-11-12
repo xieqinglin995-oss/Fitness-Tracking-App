@@ -10,9 +10,10 @@ class BackupCodecTest {
     private val data = FitnessData(weights = listOf(WeightEntry(date = "2026-11-01", grams = 80250)), settings = Settings(WeightUnit.JIN, 75000))
     private fun rejected(data: FitnessData) = assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data), today) }.isFailure)
     @Test fun allFieldsRoundTrip() { assertEquals(data, BackupCodec.decode(BackupCodec.encode(data), today).data) }
-    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":3", "\"schemaVersion\":4"), today) }.isFailure) }
+    @Test fun futureSchemaIsRejected() { assertTrue(runCatching { BackupCodec.decode(BackupCodec.encode(data).replace("\"schemaVersion\":4", "\"schemaVersion\":5"), today) }.isFailure) }
     @Test fun legacyV1BackupMigratesCombinedUnitWithoutLosingRecords() {
-        val legacy = BackupCodec.encode(data).replace("\"schemaVersion\":3", "\"schemaVersion\":1").replace(",\"loadUnit\":\"JIN\"", "")
+        val w = data.weights.single()
+        val legacy = """{"schemaVersion":1,"exportedAt":"2026-11-01T08:00:00+08:00","counts":{"weights":1,"plans":0,"executions":0,"templates":0},"data":{"weights":[{"id":"${w.id}","date":"${w.date}","grams":${w.grams},"note":"","createdAt":"${w.createdAt}","updatedAt":"${w.updatedAt}"}],"plans":[],"executions":[],"templates":[],"settings":{"unit":"JIN","goalGrams":75000}}}"""
         assertEquals(data, BackupCodec.decode(legacy, today).data)
     }
     @Test fun missingV2LoadUnitCannotSilentlyChangePreference() {

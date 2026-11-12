@@ -3,7 +3,7 @@ package com.xieqinglin.fitness.ui
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,7 +50,7 @@ import kotlin.math.roundToLong
     val selected = points.find { it.date.toString() == selectedDate }
     val axisWidth = with(LocalDensity.current) { (10.sp.toPx() * 5.5f + 8.dp.toPx()).toDp() }
     Text("体重 · ${unit.label}", style = MaterialTheme.typography.labelMedium)
-    Canvas(Modifier.fillMaxWidth().height(if (compact) 128.dp else 208.dp)
+    Canvas(Modifier.fillMaxWidth().height(if (compact) 128.dp else 184.dp)
         .semantics { contentDescription = "体重趋势图，${points.size} 个测量点，单位 ${unit.label}。实线为测量。" +
             (if (showAverage) "虚线为移动平均。" else "") + "详细值见下方历史记录。" }
         .pointerInput(points, start, end, axisWidth) {
@@ -60,7 +60,7 @@ import kotlin.math.roundToLong
                 selectedDate = points.minByOrNull { abs(left + (it.date.toEpochDay() - start.toEpochDay()).toFloat() / days * width - position.x) }?.date?.toString()
             }
         }.pointerInput(points, start, end, axisWidth) {
-            detectDragGestures(onDrag = { change, _ ->
+            detectHorizontalDragGestures(onHorizontalDrag = { change, _ ->
                 if (onOpen == null) {
                     change.consume()
                     val left = axisWidth.toPx(); val width = size.width - left - 16.dp.toPx()
@@ -78,7 +78,7 @@ import kotlin.math.roundToLong
             drawLine(gridColor, Offset(left, y(value)), Offset(right, y(value)), 1.dp.toPx())
             drawIntoCanvas { it.nativeCanvas.drawText(formatWeight(value.roundToLong(), unit), 0f, y(value) + 4.dp.toPx(), paint) }
         }
-        val formatter = DateTimeFormatter.ofPattern("M/d")
+        val formatter = DateTimeFormatter.ofPattern(if (start.year != end.year) "yy/M/d" else "M/d")
         drawIntoCanvas {
             it.nativeCanvas.drawText(start.format(formatter), left, size.height - 2.dp.toPx(), paint)
             paint.textAlign = Paint.Align.RIGHT

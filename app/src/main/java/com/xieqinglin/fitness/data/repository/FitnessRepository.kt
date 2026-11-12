@@ -8,8 +8,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.time.Clock
+import java.time.LocalDate
 
-class FitnessRepository(private val database: FitnessDatabase) {
+class FitnessRepository(private val database: FitnessDatabase, private val clock: Clock? = null) {
     val data: Flow<FitnessData> = database.invalidationTracker
         .createFlow("weights", "plans", "items", "actuals", "templates", "settings")
         .map { database.dao().snapshot() }
@@ -20,7 +22,12 @@ class FitnessRepository(private val database: FitnessDatabase) {
         database.withTransaction {
             val previous = database.dao().snapshot()
             val next = transform(previous)
-            Rules.validate(next)
+            val today = LocalDate.now(clock ?: Clock.systemDefaultZone())
+            Rules.validate(next, today, allowFutureHistory = true)
+            val oldWeights = previous.weights.associateBy { it.id }
+            val oldActuals = previous.executions.associateBy { it.id }
+            next.weights.filter { oldWeights[it.id]?.date != it.date }.forEach { Rules.pastDate(it.date, today) }
+            next.executions.filter { oldActuals[it.id]?.date != it.date }.forEach { Rules.pastDate(it.date, today) }
             database.dao().write(next, previous)
         }
     }
@@ -45,27 +52,31 @@ class FitnessRepository(private val database: FitnessDatabase) {
         val existing = plan.exercises.find { it.id == exercise.id }
         require(existing == null || data.execution(exercise.id) == null || existing.kind == exercise.kind) { "已有实际记录的项目不能改变记录方式，请新增项目" }
         val items = if (existing == null) plan.exercises + exercise else plan.exercises.map { if (it.id == exercise.id) exercise else it }
-        data.copy(plans = data.plans.filterNot { it.date == date } + plan.copy(rest = false, exercises = items))
+        val definitions = data.settings.library
+        data.copy(plans = data.plans.filterNot { it.date == date } + plan.copy(rest = false, exercises = items),
+            settings = if (exercise.definitionId != null && definitions.none { it.id == exercise.definitionId })
+                data.settings.copy(library = definitions + ExerciseDefinition(exercise.definitionId, exercise.name, exercise.kind)) else data.settings)
     }
 
-    suspend fun saveExecution(date: String, item: Exercise, actual: Values, status: ExecutionStatus, reason: String, completedSets: List<Int>? = null) = mutate { data ->
-        Rules.pastDate(date)
+    suspend fun saveExecution(date: String, item: Exercise, actual: Values, status: ExecutionStatus, reason: String, completedSets: List<Int>? = null, note: String? = null) = mutate { data ->
         val savedItem = data.plan(date)?.exercises?.find { it.id == item.id }
         require(savedItem != null) { "项目已变更，请重新打开" }
         val old = data.execution(item.id)
-        val record = Execution(old?.id ?: newId(), date, item.id, old?.nameSnapshot ?: item.name,
+        var record = Execution(old?.id ?: newId(), date, item.id, old?.nameSnapshot ?: item.name,
             old?.kindSnapshot ?: item.kind, old?.targetSnapshot ?: item.target, actual, status, reason,
             completedSets = when {
                 item.kind != ExerciseKind.STRENGTH || status == ExecutionStatus.SKIPPED -> emptyList()
                 status == ExecutionStatus.DONE -> actual.sets.indices.toList()
-                else -> (completedSets ?: if (old?.status == ExecutionStatus.DRAFT && old.actual == actual) old.completedSets else emptyList())
+                else -> (completedSets ?: if (old?.status == ExecutionStatus.DRAFT && (old.actual == actual ||
+                    (old.actual.sets.all { it.id.isBlank() } && old.actual.copy(sets = old.actual.sets.map { it.copy(id = "") }) == actual.copy(sets = actual.sets.map { it.copy(id = "") })))) old.completedSets else emptyList())
                     .filter { it in actual.sets.indices }.distinct().sorted()
-            })
+            }, note = note ?: old?.note.orEmpty())
+        if (actual.sets.all { it.id.isNotBlank() }) record = record.copy(completedSetIds = record.completedSets.map { actual.sets[it].id })
         data.copy(executions = data.executions.filterNot { it.exerciseId == item.id } + record)
     }
 
     suspend fun restore(text: String) = withContext(Dispatchers.IO) {
-        val backup = BackupCodec.decode(text)
+        val backup = BackupCodec.decode(text, allowFutureHistory = true)
         database.withTransaction { database.dao().write(backup.data, null) }
     }
 }
